@@ -1,0 +1,265 @@
+# EIF CAUSAL_GATE v4 - Evidence-Backed Causal Verification
+# IVD Intent Artifact
+# ==============================================================================
+# When CAUSAL_GATE flags a causal claim, v4 goes beyond flagging: it searches
+# for independent causal evidence (RCTs, meta-analyses, natural experiments,
+# established DAGs) and returns a structured verdict, closing the loop from
+# "this looks like a causal overclaim" to "here is or isn't independent
+# evidence for the causal mechanism."
+# ==============================================================================
+
+name: "eif_causal_gate_v4"
+version: "1.0"
+status: "implemented"  # CEP wired into eif_causal_gate MCP tool (2026-05-16); fires when consequence=HIGH + INTERVENTION/COUNTERFACTUAL; uses gpt-4.1-mini LLM callable; skips gracefully if no API key
+created: "2026-05-08"
+implemented: "2026-05-16"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PROBLEM STATEMENT
+# ─────────────────────────────────────────────────────────────────────────────
+
+problem: >
+  CAUSAL_GATE v3 classifies Pearl's causal hierarchy level and flags
+  undocumented confounders, but it stops at flagging. It outputs "reviewer
+  should verify" without actually verifying. This is peer review, not
+  experimentation. The scientific method requires that causal claims be
+  tested against independent evidence - not just identified and passed
+  through.
+
+  Research confirms:
+  - LLMs confuse P(Y|X) with P(Y|do(X)) systematically ("Rung Collapse",
+    ERM arXiv:2602.11675, 2025)
+  - Best LLM achieves F1=0.535 on real-world causal inference (ReCITE,
+    arXiv:2505.18931, 2025) - barely above chance
+  - LLMs treat conjunctive causes as disjunctive (arXiv:2505.09614, 2025)
+  - Multi-agent debate improves causal accuracy 78% → 87% (CRAwDAD,
+    arXiv:2511.22854, 2025) - but still below acceptable threshold
+  - Reasoning traces are often "Reasoning Theater" - correct conclusions
+    from contradictory internal logic (Ariadne, arXiv:2601.02314, 2026)
+
+  The gap: when CAUSAL_GATE fires on a HIGH-consequence causal claim, EIF
+  should execute a targeted evidence search for the specific causal
+  relationship and return a structured verdict. The infrastructure (P3
+  web search via DDGS, P1 code execution) already exists in FALSIFY.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DESIGN DECISIONS
+# ─────────────────────────────────────────────────────────────────────────────
+
+design:
+  approach: >
+    When CAUSAL_GATE flags a claim at INTERVENTION or COUNTERFACTUAL level
+    with HIGH consequence, v4 launches a Causal Evidence Probe (CEP) that:
+    1. Formulates a falsifiable causal query from the claim
+    2. Searches for RCTs, meta-analyses, natural experiments, or established
+       DAGs via P3 (DDGS native search)
+    3. Classifies the evidence found using Pearl's hierarchy
+    4. Returns a CausalVerdict: SUPPORTED, CONTESTED, NO_EVIDENCE, REVERSED
+
+  key_insight: >
+    We do NOT attempt to build a causal DAG or run do-calculus on the claim
+    programmatically. That requires domain-specific structural models.
+    Instead, we search for whether the causal question has already been
+    answered by the scientific community (RCTs, Cochrane reviews, natural
+    experiments, replicated observational studies with IV). This is the
+    correct application of the scientific method: check if someone already
+    ran the experiment, not re-derive causality from first principles.
+
+  llm_role_in_cep: >
+    CEP uses an LLM in two bounded, non-evidential roles only:
+    (1) extract_causal_pair - parses free-text claim into (cause, effect, domain)
+        for query formulation. This is NLP structuring, not evidence generation.
+    (2) classify_evidence - reads DDGS search snippets and classifies whether they
+        contain RCT/meta-analysis methodology. This is a text classifier reading
+        external content; the LLM does not supply causal facts from parametric memory.
+    evidence_source is always "P3_WEB_SEARCH" because facts come from DDGS.
+    If no OPENAI_API_KEY is set, extract_causal_pair falls back to a heuristic
+    (full claim as cause) and classify_evidence returns NO_EVIDENCE.
+
+  non_goals:
+    - "Do NOT build causal DAGs from agent conversations"
+    - "Do NOT run do-calculus - requires structural model we don't have"
+    - >
+      Do NOT use LLM parametric memory as causal evidence (that would be P4 - circular:
+      the same model that made the claim cannot validate it from its own training).
+      PERMITTED: lightweight LLM calls to structure or classify P3 search snippets
+      (e.g. extract_causal_pair, classify_evidence in evidence_probe.py). These are
+      NLP helpers operating on external DDGS results - the evidence_source is
+      P3_WEB_SEARCH. The LLM reads real external text; it does not supply causal facts
+      from parametric knowledge.
+    - "Do NOT slow down LOW-consequence causal claims - only probe HIGH"
+
+  trusted_sources:
+    libraries:
+      - name: "DoWhy"
+        github: "py-why/dowhy"
+        stars: 8049
+        use: "Reference for causal reasoning vocabulary and refutation patterns; not a runtime dependency"
+      - name: "causal-learn"
+        github: "py-why/causal-learn"
+        stars: 1579
+        use: "Reference for DAG structure patterns; not a runtime dependency"
+    research:
+      - "Pearl (2009) - Causality: Models, Reasoning, and Inference (canonical)"
+      - "ERM (arXiv:2602.11675, 2025) - Rung Collapse detection via regret minimization"
+      - "CRAwDAD (arXiv:2511.22854, 2025) - Dual-agent causal debate (78%→87%)"
+      - "Ariadne (arXiv:2601.02314, 2026) - Structural causal audit of reasoning faithfulness"
+      - "ReCITE (arXiv:2505.18931, 2025) - Real-world causal inference benchmark (F1=0.535)"
+      - "DoVerifier (arXiv:2601.21210, 2026) - Symbolic verification of do-calculus expressions"
+      - "CausalBench (OpenReview, 2025) - Multi-dimensional causal reasoning evaluation"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CONSTRAINTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+constraints:
+
+  - id: CG1
+    description: >
+      Causal Evidence Probe fires only on HIGH-consequence claims classified
+      at INTERVENTION or COUNTERFACTUAL level. LOW/MEDIUM claims and
+      ASSOCIATION-level claims bypass the probe entirely.
+    test: >
+      Construct 6 test claims (2 LOW/ASSOCIATION, 2 MEDIUM/INTERVENTION,
+      2 HIGH/INTERVENTION). Only the HIGH/INTERVENTION pair triggers CEP.
+      Verify the others return the v3 flag-only behavior unchanged.
+
+  - id: CG2
+    description: >
+      CEP uses only P3 (DDGS native) for evidence search. It MUST NOT use
+      P4 (parametric LLM judgment) as causal evidence. The search query
+      must include "RCT OR meta-analysis OR randomized OR natural experiment
+      OR causal" alongside the domain-specific terms.
+    test: >
+      Run CEP on "microservices reduce latency" (HIGH). Verify the search
+      query contains causal evidence keywords. Verify no P4 fallback in the
+      evidence chain. Verify evidence_source field = P3_WEB_SEARCH.
+
+  - id: CG3
+    description: >
+      CausalVerdict is one of: SUPPORTED (RCT/meta-analysis found supporting
+      the direction), CONTESTED (evidence found but contradicts or shows
+      null effect), NO_EVIDENCE (no causal studies found for this specific
+      relationship), REVERSED (evidence supports opposite causal direction).
+    test: >
+      Run CEP on a known causal relationship ("smoking causes lung cancer")
+      and verify SUPPORTED. Run on a known non-causal correlation ("ice cream
+      sales cause drowning") and verify CONTESTED or NO_EVIDENCE.
+
+  - id: CG4
+    description: >
+      CausalVerdict feeds into CALIBRATE. SUPPORTED adds +0.15 to posterior.
+      NO_EVIDENCE is neutral (0.0). CONTESTED degrades posterior by -0.20.
+      REVERSED degrades by -0.35 (same as CONTRADICTS from FALSIFY).
+    test: >
+      Construct a claim at posterior=0.55 (REVISE zone). Apply SUPPORTED →
+      verify 0.70. Apply CONTESTED → verify 0.35 (HALT boundary). Apply
+      REVERSED → verify 0.20 (deep HALT).
+
+  - id: CG5
+    description: >
+      CEP runs under a hard 3-second asyncio.wait_for wall-clock cap.
+      If CEP exceeds this limit (DDGS/OpenAI latency spike), it is
+      skipped gracefully - the causal gate result is returned without
+      a CEP result (causal_evidence=null, cep_delta not applied).
+      The 3s cap is also the expected p95 latency target (< 3s mean).
+      It reuses the existing native_search (DDGS) function from
+      native_tools.py. No new network dependencies.
+    implementation_note: >
+      The cap is a hard cutoff, not a mean target. Under sustained
+      load CEP may skip more frequently. Acceptable trade-off: CEP is
+      optional evidence enrichment, not a required gate.
+    test: >
+      Time 10 CEP executions. Verify each completes in < 3s (hard cap enforced
+      by asyncio.wait_for). Verify timeout causes graceful skip, not error.
+      Verify import path uses eif.falsify.native_tools.native_search.
+
+  - id: CG6
+    description: >
+      When CEP returns NO_EVIDENCE and the claim is HIGH-consequence, the
+      RECORD phase must note "CAUSAL_UNVERIFIED" in the provenance output.
+      This satisfies EU AI Act Art. 9 (risk management) - the system
+      explicitly documents that a high-risk causal claim could not be
+      independently verified.
+    test: >
+      Run a HIGH claim through CEP where DDGS returns no RCT/meta-analysis.
+      Verify the assembled ProvenanceRecord has:
+        record.causal_evidence_result.verdict == "NO_EVIDENCE"
+        record.causal_unverified == True
+      (There is no top-level causal_verdict key on ProvenanceRecord - the
+      verdict lives on the nested CausalEvidenceResult model.)
+
+  - id: CG7
+    description: >
+      CEP must extract and cite the specific study found (title, year, journal
+      or arXiv ID if available) in the CausalVerdict output. Verdicts without
+      a citation are rejected and downgraded to NO_EVIDENCE.
+    test: >
+      Run CEP on "statins reduce cardiovascular mortality". Verify the
+      SUPPORTED verdict includes at least one citation with study name and year.
+
+  - id: CG8
+    description: >
+      CEP (Causal Evidence Probe) is gracefully optional when OPENAI_API_KEY is absent.
+      When the key is not set, eif_causal_gate must return the normal CausalGateResult
+      with causal_evidence=None (skipping CEP entirely), without raising an error or
+      degrading other causal gate behavior. This allows CEP-free operation in environments
+      without an OpenAI API key (e.g. offline, CI, cost-sensitive deployments).
+    test: >
+      Call eif_causal_gate with OPENAI_API_KEY unset (or empty).
+      Assert the tool returns a valid response dict with causal_evidence=None.
+      Assert no exception is raised. Assert the CausalGateResult fields
+      (verdict, causal_level, confounders) are populated normally.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ARCHITECTURE
+# ─────────────────────────────────────────────────────────────────────────────
+
+architecture:
+  new_files:
+    - "eif/eif/causal_gate/evidence_probe.py - CEP implementation"
+    - "eif/eif/causal_gate/verdict.py - CausalVerdict schema + posterior adjustment"
+  modified_files:
+    - "eif/eif/causal_gate/__init__.py - export CEP"
+    - "eif/eif/schemas.py - add CausalVerdict enum + CausalEvidenceResult model"
+    - "eif/eif/record/provenance.py - add CAUSAL_UNVERIFIED flag"
+  dependencies:
+    - "eif.falsify.native_tools.native_search (existing - DDGS)"
+    - "No new pip dependencies"
+
+  flow: |
+    DECLARE → claims extracted
+      ↓
+    CAUSAL_GATE v3 (existing) → flags causal issues
+      ↓ (if causal_level >= INTERVENTION AND consequence == HIGH)
+    CAUSAL_GATE v4 CEP:
+      1. Extract (cause, effect, domain) from claim text
+      2. Formulate P3 search query: "{cause} {effect} RCT OR meta-analysis"
+      3. native_search(query) → search results
+      4. LLM classify search results → CausalVerdict + citation
+      5. Feed verdict into CALIBRATE posterior adjustment
+      6. (Ancillary) discover_confounders() runs novel-confounder discovery via
+         IRIS-inspired active search - surfaces unknown-unknown confounders beyond
+         the static list; results appear as discovered_confounders[] in output
+      ↓
+    CALIBRATE → route (ACT / REVISE / HALT)
+      ↓
+    RECORD → provenance includes causal_evidence_result.verdict and causal_unverified flag
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CONSTRAINT SATISFIABILITY
+# ─────────────────────────────────────────────────────────────────────────────
+
+constraint_satisfiability:
+  conflicts_checked:
+    - "CG1 (only HIGH) vs CG5 (< 3s): compatible - fewer probes means lower avg latency"
+    - "CG2 (no P4) vs CG4 (verdict classification): the search is P3, the classification
+      of search results uses an LLM - but the evidence itself is external (P3 source).
+      This is the same pattern as FALSIFY: LLM interprets external evidence, not self-validates."
+    - "CG7 (citation required) vs CG3 (NO_EVIDENCE): compatible - NO_EVIDENCE means
+      no citation was possible, which is the correct state"
+  tensions:
+    - "CG2 vs classification step: LLM judges whether a P3 result constitutes causal
+      support. This is analogous to FALSIFY's LLM judging P2/P3 evidence as SUPPORTS/
+      CONTRADICTS. Accepted trade-off - documented in design_decisions."
+  resolution: "All constraints simultaneously satisfiable."

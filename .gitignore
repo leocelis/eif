@@ -1,0 +1,26 @@
+.claude/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+*.jsonl
+validation/data/*
+!validation/data/.gitkeep
+_private/
+
+# Safety (scrubbing artifacts) - never commit
+gitleaks-report.json
+secrets.txt

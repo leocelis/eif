@@ -1,0 +1,14 @@
+# TrustLint - EIF LLM-facing artifacts (EU AI Act Article 5 screening)
+# Offline gate: ./scripts/compliance/check.sh · pip install 'trustlint>=2.0.1'
+
+jurisdiction: EU
+severity_threshold: high
+
+include:
+  - "eif/**/*_intent.yaml"
+
+exclude:
+  - ".venv/**"
+  - "**/__pycache__/**"
+  - ".git/**"
+  - ".trustlint-cache/**"

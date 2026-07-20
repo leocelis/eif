@@ -1,0 +1,109 @@
+# EIF Independent Convergent Replication - Intent Artifact
+# IVD Intent Artifact
+# ==============================================================================
+# Extension B (F13): Independent convergent replication.
+# Implemented in: eif/replicate/independent.py
+# MCP tool: eif_replicate (server.py)
+# ==============================================================================
+
+name: "eif_independent_replication"
+version: "1.0"
+status: "implemented"
+created: "2026-05-16"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PROBLEM STATEMENT
+# ─────────────────────────────────────────────────────────────────────────────
+
+problem: >
+  A conclusion that is correct under a high empirical prior (learned from session
+  history) may flip routing when starting fresh. This is prior-dependent instability
+  - the routing depends not just on the evidence but on accumulated session context
+  that an independent agent would not share. DASES adversarial replication (F8)
+  does not catch this failure mode because DASES probes the claim itself, not
+  whether a fresh agent would reach the same routing verdict.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CONSTRAINTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+constraints:
+
+  - id: IR1
+    description: >
+      The replication algorithm must be deterministic - no LLM calls, no network
+      calls. Starting from flat prior P(H) = 0.5 and the original likelihood from
+      calibration, the independent posterior is computed as: flat_posterior = likelihood.
+      (With P(H) = P(~H) = 0.5: P(E) = likelihood*0.5 + (1-likelihood)*0.5 = 0.5,
+      so P(H|E) = P(E|H) * P(H) / P(E) = likelihood * 0.5 / 0.5 = likelihood.)
+    test: >
+      Given a CalibrationResult with likelihood=0.8 and prior=0.9, calling
+      run_independent_replication() must produce independent_min_posterior=0.8 (flat prior
+      derivation) without making any network or LLM calls. Verify: mock all external
+      calls; the function must return a result without triggering any mock.
+
+  - id: IR2
+    description: >
+      Routing classification uses the minimum posterior over HIGH-consequence claims.
+      Falls back to minimum over all claims if no HIGH claims are tagged.
+      Uses THRESHOLD_ACT and THRESHOLD_HALT from eif/schemas.py:
+        ACT    >= 0.70 (THRESHOLD_ACT)
+        REVISE  0.20–0.70 (between THRESHOLD_HALT and THRESHOLD_ACT)
+        HALT   < 0.20 (THRESHOLD_HALT)
+      Note: _routing_from_posterior only imports THRESHOLD_ACT and THRESHOLD_HALT
+      (not THRESHOLD_REVISE). REVISE is the default bucket between the two bounds.
+    test: >
+      Given two CalibrationResults [posterior=0.75, consequence=MEDIUM] and
+      [posterior=0.15, consequence=HIGH], the routing must be HALT (minimum HIGH
+      posterior = 0.15 < 0.20 = THRESHOLD_HALT). Given only [posterior=0.75, consequence=MEDIUM],
+      routing must be ACT (minimum all = 0.75 >= 0.70 = THRESHOLD_ACT).
+      Given [posterior=0.35, consequence=HIGH], routing must be REVISE
+      (0.35 >= 0.20 and 0.35 < 0.70).
+
+  - id: IR3
+    description: >
+      created_at on IndependentReplicationResult must equal ProvenanceRecord.timestamp
+      (not datetime.utcnow()). This ensures deterministic results across multiple calls
+      for the same ProvenanceRecord - the timestamp does not drift between calls.
+    test: >
+      Call run_independent_replication() twice with the same ProvenanceRecord.
+      Assert result1.created_at == result2.created_at == record.timestamp.
+
+  - id: IR4
+    description: >
+      When DIVERGENT, the original_routing is NOT overridden. The result is a flag
+      for human review only. The original generator's verdict stands.
+    test: >
+      Given a DIVERGENT result, verify the MCP tool eif_replicate returns
+      agreement_type="DIVERGENT" but does NOT modify the ProvenanceRecord
+      or change any routing decision. The caller must decide what to do.
+
+  - id: IR5
+    description: >
+      When no calibration history exists for the record (empty list), replication
+      returns a vacuously CONVERGENT result (agreement_type="CONVERGENT", diverged=False,
+      claims_compared=0) with notes="No calibration results in record - vacuously CONVERGENT."
+      Rationale: empty calibration is not a failure - it means no claims were calibrated yet.
+      Returning CONVERGENT with claims_compared=0 is the correct null case; callers can
+      distinguish by checking claims_compared. Returning INSUFFICIENT_DATA would conflate
+      "no calibration" with "calibration was done but data is too sparse to measure drift."
+    test: >
+      Call run_independent_replication() with a ProvenanceRecord where calibration=[].
+      Assert result.agreement_type == "CONVERGENT" and result.diverged == False
+      and result.claims_compared == 0
+      and "vacuously" in result.notes.lower().
+
+# ─────────────────────────────────────────────────────────────────────────────
+# IMPLEMENTATION REFERENCE
+# ─────────────────────────────────────────────────────────────────────────────
+
+implementation:
+  module: "eif/replicate/independent.py"
+  function: "run_independent_replication(record: ProvenanceRecord) -> IndependentReplicationResult"
+  mcp_tool: "eif_replicate"
+  schema: "IndependentReplicationResult (eif/schemas.py)"
+
+research:
+  - "Open Science Framework pre-registration principles (Lakens 2021)"
+  - "Convergent validity: independent paths to same conclusion increase confidence"
+  - "Prior-dependent routing instability: identified in EIF V3 corpus analysis"

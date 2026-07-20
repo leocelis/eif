@@ -1,0 +1,295 @@
+# EIF Engine - IVD Intent Artifact
+# ==============================================================================
+# Purpose:  Canonical intent for the Epistemic Integrity Framework v1 engine.
+#           All implementation decisions must satisfy these constraints.
+#           Use this artifact for post-implementation verification (IVD Rule 2)
+#           and future change proposals (IVD Rule 1).
+#
+# Audience: AI agents (IVD compliance), human engineers, code reviewers.
+# Origin:   EIF design and research corpus (validated, 208 claims, 11 rounds)
+# ==============================================================================
+
+id: eif-engine-intent
+version: "1.0"
+created: "2026-05-07"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PROBLEM STATEMENT
+# ─────────────────────────────────────────────────────────────────────────────
+
+problem:
+  title: "AI agent knowledge gaps and unvalidated assumptions produce compounding errors"
+  failure_rate: "88% of AI agent projects fail before production"
+  root_cause: >
+    AI agents treat assumptions as facts, skip falsification, accumulate
+    compound errors across multi-step decisions, and produce no auditable
+    record of their epistemic state.  There is no systematic mechanism to
+    apply the scientific method - conjecture, falsification, calibration,
+    explanation - to agent reasoning.
+  forcing_events:
+    - "EU AI Act Article 9/12/13/14 enforcement - August 2026"
+    - "Colorado AI Act - June 2026"
+    - "LLM sycophancy bias (Perez et al. 2022) measurably degrades output quality"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SOLUTION SUMMARY
+# ─────────────────────────────────────────────────────────────────────────────
+
+solution:
+  name: "Epistemic Integrity Framework (EIF)"
+  layer_1: "Cursor rules (.cursor/rules/eif.mdc) - always-on agent rules"
+  layer_2: "Python engine (eif/ package) - DECLARE→FALSIFY→CAUSAL_GATE→CALIBRATE→CHALLENGE→UPDATE→EXPLAIN→RECORD (+INPUT_GUARD, +SYCOPHANCY_GATE, +HYPOTHESIS_AGENDA, +REPLICATE, +PROGRAMME)"
+  layer_3: "MCP server (eif.mcp_server) - 24 tools + 5 resources; FastMCP"
+  scientific_method_mapping:
+    DECLARE:    "Operationalize: name every assumption before acting"
+    FALSIFY:    "Falsifiability (Popper): define what observation disproves each claim; SPRT"
+    CAUSAL_GATE: "Causal validity (Pearl): reject association-only causal claims"
+    CALIBRATE:  "Bayesian inference: update belief from evidence; ECE; conformal coverage"
+    CHALLENGE:  "Adversarial criticism: independent critic challenges surviving claims"
+    UPDATE:     "Sequential updating: EIG-gated Bayesian posterior; stopping rules"
+    EXPLAIN:    "Hard-to-vary explanations (Deutsch): every detail must be load-bearing"
+    RECORD:     "Epistemic provenance (DeepTRACE): immutable audit chain"
+    REPLICATE:  "Replication crisis reforms (Nosek 2018): pre-registered replication protocols"
+    PROGRAMME:  "Lakatos programme health: PROGRESSIVE / STABLE / DEGENERATIVE"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CONSTRAINTS  (each has a test - IVD Rule 3)
+# ─────────────────────────────────────────────────────────────────────────────
+
+constraints:
+
+  # ── Claim classification ────────────────────────────────────────────────────
+
+  - id: C1
+    description: >
+      Every claim must be classified as KNOWN, ASSUMED, or GUESSED.
+      KNOWN claims must have an evidence_source.
+    rationale: "Operationalization principle - Nosek et al. 2018"
+    test: >
+      Create a Claim with claim_type=KNOWN and no evidence_source.
+      Pydantic must raise ValidationError.
+      PASS: ValidationError raised.  FAIL: silent acceptance.
+
+  - id: C2
+    description: >
+      ASSUMED and GUESSED claims with no falsification_condition must be
+      returned in eif_declare's falsification_required list.
+    rationale: "Popper: an unfalsifiable claim is an assumption, not knowledge"
+    test: >
+      Call eif_declare with one ASSUMED claim that has no
+      falsification_condition.  Assert falsification_required contains
+      that claim's text.
+
+  # ── SPRT orientation ────────────────────────────────────────────────────────
+
+  - id: C3
+    description: >
+      SPRT uses POPPER orientation: H₀ = claim IS TRUE.
+      REJECT H₀ means the claim is FALSIFIED.
+      Likelihood ratio Λₖ ≥ B (reject_boundary) triggers REJECT.
+      Λₖ ≤ A (accept_boundary) triggers ACCEPT.
+    rationale: "Wald 1945; POPPER (arXiv:2502.09858) - falsification-first hypothesis testing"
+    test: >
+      Call run_sprt with observations=[False, False, False, False, False]
+      (every sample refutes H₀ - i.e. each observation is disconfirmatory,
+      Bernoulli P(refute)=1). Assert SPRT decision=="REJECT" (claim falsified).
+      Call with observations=[True]*10 (all confirmatory). Assert ACCEPT.
+      Call with alternating [True, False]*3. Assert CONTINUE (inconclusive).
+      With effect_size=0.2, alpha=0.05, beta=0.10 and >= 30 observations,
+      decision must be REJECT.
+
+  # ── Bayesian calibration ────────────────────────────────────────────────────
+
+  - id: C4
+    description: >
+      Posterior must be computed using Bayes' theorem: P(H|E) ∝ P(E|H)·P(H).
+      Result must be in (0, 1) exclusive.
+    rationale: "Bayesian inference; Gelman et al. 2013"
+    test: >
+      Call compute_posterior(prior=0.5, evidence_supports=True, likelihood_estimate=0.8).
+      Assert 0 < posterior < 1 and posterior > 0.5 (positive evidence shifts upward).
+
+  - id: C5
+    description: >
+      Prior strategy is auto-selected: if calibration_history < PRIOR_EMPIRICAL_MIN
+      (10) use max_entropy; if >= 10 use empirical_bayes; if user supplies prior
+      use domain.
+    rationale: "Efron & Morris 1977; Casella 1985"
+    test: >
+      Call select_prior_strategy with history_size=5.
+      Assert strategy == "max_entropy".
+      Call with history_size=15.  Assert strategy == "empirical_bayes".
+
+  # ── EIG stopping ────────────────────────────────────────────────────────────
+
+  - id: C6
+    description: >
+      EIG = KL(posterior ∥ prior).  If EIG < EIG_THRESHOLD (0.01 nats),
+      stopping_rule_triggered must be True and stopping_reason must be
+      EIG_BELOW_THRESHOLD.
+    rationale: "Bayesian experimental design; KL divergence stopping (Lindley 1956); LAPD (arXiv:2503.02983)"
+    test: >
+      Call compute_eig(prior=0.5, posterior=0.501).  Assert result < 0.01.
+      Call evaluate_stopping with eig=0.001.
+      Assert stopping_rule_triggered=True, stopping_reason=EIG_BELOW_THRESHOLD.
+
+  # ── Hard-to-vary explanations ───────────────────────────────────────────────
+
+  - id: C7
+    description: >
+      An ExplanationArtifact with any ExplanationDetail whose prediction_impact
+      is empty, generic, or a paraphrase of detail_text must receive
+      hard_to_vary_verdict=FAIL.
+    rationale: "Deutsch 2011 - hard-to-vary criterion; arXiv:2601.15808"
+    test: >
+      Build ExplanationArtifact with one detail where prediction_impact=
+      "changes the explanation" (generic phrase).
+      Assert check_hard_to_vary returns FAIL.
+
+  # ── Provenance record ───────────────────────────────────────────────────────
+
+  - id: C8
+    description: >
+      Every completed decision loop must produce a ProvenanceRecord with a
+      unique record_id (UUID4), session_id, timestamp, and registry.
+    rationale: "DeepTRACE epistemic provenance; arXiv:2509.04499"
+    test: >
+      Call eif_record with a valid session, registry, and decision.
+      Assert record_id is a valid UUID4 and record appears in
+      session provenance_chain.
+
+  - id: C9
+    description: >
+      contrary_evidence_considered is True in ProvenanceRecord when EITHER:
+        (a) the CHALLENGE phase ran with an independent critic (critic_independence != NONE) - 
+            the independent critic process itself constitutes considering contrary evidence,
+            even when the critic finds no counter-evidence and returns an empty list; OR
+        (b) explicit counter-evidence strings were supplied (len(challenge.counter_evidence) > 0) - 
+            the caller actively gathered opposing evidence, regardless of critic independence.
+      False only when challenge is None, or when challenge.critic_independence == NONE AND
+      challenge.counter_evidence is empty (no independent process and no gathered opposition).
+    rationale: >
+      Both pathways satisfy the coverage completeness intent: the agent did not merely
+      self-validate. DeepTRACE dimension 7; CONSENSAGENT ACL 2025 §3.
+      OR-logic preserves coverage for minimal pipelines where the critic finds nothing
+      (a valid result) and for callers who supply their own counter-evidence directly.
+    test: >
+      Build ProvenanceRecord where challenge.critic_independence=NONE and counter_evidence=[].
+      Assert contrary_evidence_considered=False (neither condition met).
+      Build one where critic_independence=DIFFERENT_FAMILY and counter_evidence=[].
+      Assert contrary_evidence_considered=True (independent critic ran - condition a).
+      Build one where critic_independence=NONE and counter_evidence=["evidence A"].
+      Assert contrary_evidence_considered=True (counter-evidence supplied - condition b).
+      Build one where critic_independence=DIFFERENT_FAMILY and counter_evidence=["evidence A"].
+      Assert contrary_evidence_considered=True (both conditions satisfied).
+
+  # ── Replication ─────────────────────────────────────────────────────────────
+
+  - id: C10
+    description: >
+      agreement_rate >= REPLICATE_AGREE_THRESHOLD (0.80) → REPLICATED.
+      agreement_rate < REPLICATE_FAIL_THRESHOLD (0.50) → DIVERGED.
+      Otherwise → INCONCLUSIVE.
+    rationale: "Nosek et al. 2018; arXiv:2602.21368"
+    test: >
+      Call evaluate_replication(claim_text="X", original_inputs={},
+      replication_results=["X"]*4+["Y"], n_replicates=5, replication_criterion="EXACT")
+      to produce agreement_rate=0.80 → assert verdict=="REPLICATED".
+      Build inputs yielding agreement_rate=0.45 → assert verdict=="DIVERGED".
+      Build inputs yielding agreement_rate=0.65 → assert verdict=="INCONCLUSIVE".
+      (Implementation is evaluate_replication() in replicate/divergence.py; no
+      determine_replication_verdict() exists.)
+
+  # ── Lakatos programme health ────────────────────────────────────────────────
+
+  - id: C11
+    description: >
+      ProgrammeStatus is PROGRESSIVE when novel_prediction_rate > 0.3 and
+      confirmed_prediction_rate > 0.3 and patch_rate < 0.4 and oscillation_count <= 1.
+      DEGENERATIVE when patch_rate >= 0.6 or oscillation_count >= 3 or
+      confirmed_prediction_rate < 0.1 (many predictions, none confirmed).
+      STABLE otherwise.
+    rationale: >
+      Lakatos 1978 - research programme health.
+      Thresholds deliberately conservative: patch_rate >= 0.6 (not 0.4) avoids
+      misclassifying early-stage sessions with limited history as DEGENERATIVE.
+      confirmed_prediction_rate > 0.3 sets a meaningful minimum for PROGRESSIVE.
+    test: >
+      Build ProgrammeSignals with novel_prediction_rate=0.5,
+      confirmed_prediction_rate=0.4, patch_rate=0.1, oscillation_count=0.
+      Assert compute_status returns PROGRESSIVE.
+      Build with novel_prediction_rate=0.31, confirmed_prediction_rate=0.31,
+      patch_rate=0.39, oscillation_count=1. Assert returns PROGRESSIVE (boundary).
+      Build with patch_rate=0.6. Assert returns DEGENERATIVE.
+      Build with oscillation_count=3. Assert returns DEGENERATIVE.
+      Build with confirmed_prediction_rate=0.05. Assert returns DEGENERATIVE.
+
+  # ── Causal gate ──────────────────────────────────────────────────────────────
+
+  - id: C12
+    description: >
+      CausalGateResult must detect disjunctive_bias_flag=True when the
+      hypothesis contains " and " conjunctions under ASSOCIATION-level evidence.
+      LLMs systematically treat conjunctive causes (A and B) as disjunctive
+      (A or B) when evidence is only observational (arXiv:2505.09614).
+    rationale: "Pearl 2009; arXiv:2505.09614 - LLM disjunctive bias"
+    test: >
+      Call check_intervention with hypothesis "A and B causes C" and
+      evidence_level="ASSOCIATION".
+      Assert disjunctive_bias_flag=True.
+      Call with hypothesis "A causes C" (no and).
+      Assert disjunctive_bias_flag=False.
+
+  # ── HARKing guard ────────────────────────────────────────────────────────────
+
+  - id: C13
+    description: >
+      harking_flag=True must be set when a claim's falsification_condition
+      was registered_at a timestamp after the claim's verified_at timestamp.
+    rationale: "HARKing (Kerr 1998) - Hypothesizing After Results are Known"
+    test: >
+      Build a Claim with verified_at=T1 and a FalsificationCondition with
+      registered_at=T2 where T2 > T1.  Run detect_harking.
+      Assert harking_flag=True on the returned registry.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# POST-IMPLEMENTATION VERIFICATION CHECKLIST (IVD Rule 2)
+# ─────────────────────────────────────────────────────────────────────────────
+
+verification_checklist:
+  - "Run: pytest tests/ - all tests pass with 0 failures"
+  - "C1: Pydantic validation test for KNOWN claim without evidence_source"
+  - "C2: eif_declare returns falsification_required list for untested ASSUMED claims"
+  - "C3: SPRT all-false observations → REJECT decision (tested in falsify/sprt.py, not registry.py)"
+  - "C4: Bayesian posterior in (0, 1) and directionally correct"
+  - "C5: Prior strategy auto-selection: below PRIOR_EMPIRICAL_MIN (10) → max_entropy; at or above → empirical_bayes (examples: history=5 → max_entropy, history=15 → empirical_bayes)"
+  - "C6: EIG < 0.01 triggers stopping_rule_triggered=True"
+  - "C7: Generic prediction_impact phrase → FAIL hard-to-vary verdict"
+  - "C8: ProvenanceRecord has UUID4 record_id and appears in session chain"
+  - "C9: contrary_evidence_considered=True when independent critic OR counter_evidence supplied; False when neither"
+  - "C10: Replication verdict thresholds correct (0.80→REPLICATED, 0.50→DIVERGED - per REPLICATE_FAIL_THRESHOLD)"
+  - "C11: DEGENERATIVE when patch_rate≥0.6 OR oscillation_count≥3 OR confirmed_prediction_rate<0.1 (disjunctive); PROGRESSIVE requires novel>0.3 AND confirmed>0.3 AND patch<0.4 AND oscillation_count≤1 (conjunctive - all four must hold)"
+  - "C12: Disjunctive bias detection fires on 'and' hypothesis under ASSOCIATION evidence; absent on simple causal claim"
+  - "C13: HARKing flag fires when registered_at > verified_at"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SCOPE EXCLUSIONS (v1)
+# ─────────────────────────────────────────────────────────────────────────────
+
+out_of_scope_v1:
+  - "Active IVD MCP integration (write IVD intent/feedback YAML only)"
+  - "External session correlation (linked_session_id field reserved but not wired)"
+  - "sentence-transformers semantic diversity (cost_model/compound_error.py stubs it)"
+  - "CLI entrypoint beyond basic skeleton"
+  - "Production deployment configuration"
+  - "Label-grounded ECE (v1 limitation - superseded by V3): ece.py and conformal.py originally used confidence_tier proxies as outcome approximations. EIF V3 introduced eif_record_outcome, OutcomeRecord, and the cross-session outcome_store, which close this gap. Label-grounded ECE now activates at >= 30 labeled outcome records. The v1 approximation note is retained here for historical reference only."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RELATED ARTIFACTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+related_artifacts:
+  architecture:    "docs/architecture.md"
+  research:        "docs/research_foundation.md"
+  cursor_rules:    ".cursor/rules/eif.mdc"
+  ivd_feedback:    "the maintainer feedback ledger (private)"

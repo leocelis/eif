@@ -1,0 +1,67 @@
+# DigitalOcean App Platform spec for the EIF hosted MCP endpoint.
+#
+# Canon deployment shape (same pattern as sibling projects): a single
+# App Platform service built from the repo Dockerfile, Bearer-key auth,
+# custom domain in front. Single shared key, no billing, no tiers.
+#
+# Prerequisites:
+#   1. DigitalOcean account with the GitHub repo connected
+#   2. A generated API key: python -c "from eif.mcp_server.auth import generate_key; print(generate_key())"
+#   3. DNS CNAME for your domain pointing at the DO app
+#
+# Deploy:
+#   doctl apps create --spec deploy/do_app_spec.yaml
+#   doctl apps update <app-id> --spec deploy/do_app_spec.yaml
+#
+# Endpoints once live:
+#   GET  /health      liveness (no auth)
+#   /mcp              MCP streamable-http transport (Bearer)
+#   /sse, /messages   MCP SSE transport (Bearer) - used by mcp-remote and Cursor URL configs
+#   POST /verify      REST endpoint for the SDK interceptors (key in JSON body)
+
+name: eif-engine
+region: nyc1
+
+services:
+  - name: eif-mcp-http
+    source_dir: /
+    github:
+      repo: leocelis/eif
+      branch: main
+      deploy_on_push: true
+
+    dockerfile_path: Dockerfile
+
+    # Basic plan: sufficient for a single-tenant hosted MCP
+    instance_size_slug: basic-xxs  # 0.5 vCPU, 512 MB RAM, $5/month
+
+    http_port: 8080
+    run_command: >
+      uvicorn eif.mcp_server.http_server:app
+      --host 0.0.0.0
+      --port 8080
+      --workers 1
+      --log-level info
+
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 5
+      period_seconds: 30
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 3
+
+    envs:
+      - key: EIF_ENV
+        value: production
+        scope: RUN_TIME
+      - key: EIF_API_KEY
+        type: SECRET
+        scope: RUN_TIME
+      # Optional: enables the CHALLENGE multi-critic and causal evidence probe
+      - key: OPENAI_API_KEY
+        type: SECRET
+        scope: RUN_TIME
+
+# Custom domain: add in the DO dashboard (Settings -> Domains), e.g.
+# eif.<your-domain>, then CNAME it to the app's default hostname.

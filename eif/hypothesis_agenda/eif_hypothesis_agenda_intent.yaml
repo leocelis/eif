@@ -1,0 +1,168 @@
+# EIF v3 - HYPOTHESIS_AGENDA IVD Intent Artifact
+# ==============================================================================
+# Purpose:  Close scientific method gap S3 - Experimental Design / Active
+#           Learning. EIF currently applies the scientific method to claims
+#           *presented* to it. It does not proactively decide which assumption
+#           to test first under resource constraints. This module adds Bayesian
+#           priority scoring so EIF ranks hypotheses before sending to FALSIFY.
+#
+# Gap found: Market audit 2026-05-08 - S3 gap confirmed as OPEN
+# Research:  See research_citations below (GRACE, LAPD, GO-CBED, Chaloner & Verdinelli)
+# Tech spec: eif/docs/eif_v2_tech_spec.md
+# ==============================================================================
+
+id: eif-hypothesis-agenda-v1
+version: "1.0"
+created: "2026-05-08"
+status: implemented  # EIG-ranked hypothesis agenda fully implemented in hypothesis_agenda/ (agenda.py, scorer.py, fdr.py) as of 2026-05-15
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PROBLEM STATEMENT
+# ─────────────────────────────────────────────────────────────────────────────
+
+problem:
+  title: "EIF applies scientific method to presented claims but does not prioritize which hypothesis to test next"
+  area: "S3 - Experimental Design / Active Learning"
+  discovered_in: "Market research cross-check 2026-05-08 - S3 listed as OPEN gap"
+  evidence_of_absence: >
+    Across 11 corpus scenarios (S4–S11), EIF ran FALSIFY on all claims
+    sequentially in registration order. No scenario demonstrated that
+    EIF selected the most epistemically valuable assumption to probe first.
+    On a 5-claim session with one GUESSED HIGH-consequence claim and four
+    ASSUMED LOW-consequence claims, EIF probed them in registration order.
+    In resource-constrained production runs (≤3 probes per session), this
+    means the most dangerous assumption may never be tested.
+  research_citations:
+    - "Chaloner & Verdinelli (1995, Statistical Science) - Bayesian Experimental Design: optimal experiment selection maximizes Expected Information Gain"
+    - "GRACE (arXiv:2506.11421, 2025) - Greedy Randomized Adaptive Conformal Experiments: sequential hypothesis prioritization under uncertainty"
+    - "LAPD (arXiv:2503.09741, 2025) - Look-Ahead Policy for experimental Design: budget-aware test ordering outperforms random/sequential by 28%"
+    - "GO-CBED (arXiv:2302.09807, 2023) - Gradient-based Optimal Bayesian Experimental Design: EIG maximization as the normative criterion"
+    - "IFScale (2025) - LLMs satisfy 68% of constraints at high density; structured priority reduces missed-constraint rate"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SOLUTION
+# ─────────────────────────────────────────────────────────────────────────────
+
+solution:
+  name: "HYPOTHESIS_AGENDA phase"
+  position_in_pipeline: "before FALSIFY - ranks assumptions to determine test order"
+  rationale: >
+    Placed before FALSIFY so the scorer's ranked output can gate which
+    assumptions are sent to the evidence collector first. Integrates with the
+    existing DECLARE registry: operates on Claim objects already typed and
+    registered. Does not modify claims, only ranks them.
+  mechanism:
+    priority_score: >
+      priority(claim) = EIG(prior, posterior) × consequence_weight ×
+      boundary_factor × uncertainty_factor
+    components:
+      EIG: >
+        Residual EIG proxy implemented as compute_residual_eig() in scorer.py:
+        residual = 1 − KL(posterior ∥ type_default_prior) / KL_max (KL_max ≈ 0.693).
+        A high residual means much uncertainty remains - the claim is worth probing.
+        Uses eif.update.eig.compute_eig() internally. Directionally equivalent to
+        maximizing expected information gain (Chaloner & Verdinelli 1995).
+      consequence_weight: "HIGH=3.0, MEDIUM=1.5, LOW=1.0"
+      boundary_factor: >
+        Gaussian proximity to the nearest decision threshold (ACT=0.70 or
+        HALT=0.20). Claims near a threshold are decision-critical: a small
+        evidence shift could flip the routing.
+        boundary_factor = exp(-((posterior - nearest_threshold)² / 0.05))
+      uncertainty_factor: "GUESSED=1.5, ASSUMED=1.2, KNOWN=0.5 (already verified)"
+    output: >
+      HypothesisAgenda: ranked list of HypothesisAgendaItem with priority
+      scores, rationale, and top_recommendation (the single highest-priority
+      assumption to test first).
+  integration_point: >
+    build_agenda(registry, calibration_map) is called between DECLARE and
+    FALSIFY. The FALSIFY phase should test assumptions in agenda rank order - 
+    this is a host/caller responsibility. The MCP tool eif_hypothesis_agenda
+    returns the ranked list; the caller must pass items to eif_falsify in that
+    order. The MCP server does not enforce order automatically. If a budget
+    limit is set (max_probes), only the top-N items should be tested.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CONSTRAINTS (IVD Rule 3 - each must have a test)
+# ─────────────────────────────────────────────────────────────────────────────
+
+constraints:
+  - id: HA1
+    description: >
+      build_agenda must rank HIGH-consequence GUESSED claims above
+      LOW-consequence ASSUMED claims when all posteriors are equal.
+    test: >
+      Unit: give registry with [GUESSED HIGH posterior=0.50,
+      ASSUMED LOW posterior=0.50]. Assert agenda.items[0].claim_type == "GUESSED"
+      and items[0].consequence_weight > items[1].consequence_weight.
+
+  - id: HA2
+    description: >
+      A claim with posterior near a decision threshold (within ±0.10 of
+      ACT=0.70 or HALT=0.20) must receive a boundary_factor ≥ 0.60.
+    test: >
+      Unit: compute_boundary_factor(0.25) should be ≥ 0.60
+      (0.25 is within ±0.10 of HALT threshold 0.20; specific distance = 0.05).
+      compute_boundary_factor(0.65) should be ≥ 0.60 (within ±0.10 of ACT threshold 0.70;
+      specific distance = 0.05). Both examples satisfy the ±0.10 constraint boundary.
+
+  - id: HA3
+    description: >
+      agenda.top_recommendation must be the claim with the highest
+      priority_score - not necessarily the first claim in the registry.
+    test: >
+      Validation S12: given a 5-claim scenario, agenda.top_recommendation
+      matches the item at agenda.items[0].claim_text. Items sorted descending.
+
+  - id: HA4
+    description: >
+      When max_probes=2, only the top 2 ranked claims are returned in
+      agenda.items. Claims beyond rank 2 are present in agenda.deferred.
+    test: >
+      Unit: 5-claim registry + max_probes=2 → len(agenda.items) == 2,
+      len(agenda.deferred) == 3.
+
+  - id: HA5
+    description: >
+      agenda.rationale must explain why the top_recommendation was ranked #1:
+      it must reference consequence_weight and/or boundary_factor explicitly.
+    test: >
+      Validation S12: assert "consequence" in agenda.rationale.lower() or
+      "boundary" in agenda.rationale.lower() or "threshold" in agenda.rationale.lower().
+
+  - id: HA6
+    description: >
+      KNOWN claims must always rank below ASSUMED and GUESSED claims with
+      equal or lower posteriors, because KNOWN claims already have evidence.
+    test: >
+      Unit: KNOWN HIGH posterior=0.80, GUESSED HIGH posterior=0.50.
+      Assert GUESSED item.priority_score > KNOWN item.priority_score
+      (KNOWN has low uncertainty_factor=0.5; GUESSED has 1.5).
+
+# ─────────────────────────────────────────────────────────────────────────────
+# IMPLEMENTATION
+# ─────────────────────────────────────────────────────────────────────────────
+
+implementation:
+  module: "eif/eif/hypothesis_agenda/"
+  files:
+    - "scorer.py - compute_priority_score, compute_boundary_factor, compute_uncertainty_factor"
+    - "agenda.py - build_agenda(registry, calibration_map, max_probes) → HypothesisAgenda"
+    - "__init__.py - export build_agenda, HypothesisAgenda"
+  schema_additions:
+    - "HypothesisAgendaItem (schemas.py)"
+    - "HypothesisAgenda (schemas.py)"
+  integration:
+    - "eif/__init__.py: export hypothesis_agenda"
+    - "eif/eif/mcp_server/server.py: eif_hypothesis_agenda tool (implemented; intent originally named eif_build_hypothesis_agenda - renamed during implementation for consistency with other tool naming)"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# VALIDATION
+# ─────────────────────────────────────────────────────────────────────────────
+
+validation_note: "Validation scripts and evidence reports available on request via GitHub Discussions."
+corpus_scenario: "S12"
+
+constraint_satisfiability:
+  conflicts_checked: "HA1 vs HA6 - both concern ranking; they are compatible (HA6 uses uncertainty_factor, HA1 uses consequence_weight × uncertainty_factor together)"
+  tension: "HA4 (max_probes truncation) vs HA3 (top_recommendation) - resolved: top_recommendation always = items[0] regardless of truncation"
+  resolution: "No conflicts. Priority formula combines all factors multiplicatively - no constraint requires ignoring another."

@@ -1,0 +1,86 @@
+# EIF Empirical Catch Rate - Intent Artifact
+# IVD Intent Artifact
+# ==============================================================================
+# F14 (V3): Empirical catch-rate measurement for the compound error model.
+# Implemented in: eif/cost_model/catch_rate_empirical.py
+# Also referenced in: eif_v3_intent.yaml §F14C1–F14C3
+# ==============================================================================
+
+name: "eif_catchrate_empirical"
+version: "1.0"
+status: "implemented"
+created: "2026-05-16"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PROBLEM STATEMENT
+# ─────────────────────────────────────────────────────────────────────────────
+
+problem: >
+  The EIF compound error rate formula uses three catch-rate parameters (f, u, c)
+  for FALSIFY, UPDATE, and CHALLENGE phases. Using literature defaults only
+  (f=0.60, u=0.50, c=0.40) ignores observed session performance. F14 adds an
+  empirical measurement layer that replaces literature defaults with session
+  evidence when sufficient data exists.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CONSTRAINTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+constraints:
+
+  - id: F14C1
+    description: >
+      f_empirical (FALSIFY catch rate) is measured from ProvenanceRecords as:
+      wrong_claims_caught / wrong_claims_total.
+      A claim is "caught" when the record's SPRT returned REJECT (H0 rejected) for
+      any falsification condition, OR any falsification_condition has trivial_flag=True.
+      wrong_claims_total: uses HIGH-consequence claims from record.calibration when
+      available; falls back to len(guessed) + len(assumed) for older records without
+      consequence_of_wrong tagging (pre-F13 migration).
+      Note: harking_flag and causal_unverified are NOT counted in f_empirical - 
+      those are provenance flags, not FALSIFY catch events.
+    test: >
+      Given 3 records where 2 have at least one sprt_result.decision=="REJECT" and 1 does not,
+      and each has 1 HIGH-consequence claim, f_empirical = 2/3. Verify: create mock records
+      and call compute_session_catch_rates(). Assert result.f_empirical ≈ 0.667.
+
+  - id: F14C2
+    description: >
+      The measurement store uses labeled_count (records with known outcomes from eif_record_outcome)
+      to determine confidence tier:
+        labeled_count < PARTIAL_MIN_SESSIONS (3) → INSUFFICIENT_DATA (use literature defaults)
+        PARTIAL_MIN_SESSIONS ≤ labeled_count < EMPIRICAL_MIN_SESSIONS (5) → PARTIAL (use literature defaults)
+        labeled_count ≥ EMPIRICAL_MIN_SESSIONS (5) → SUFFICIENT (use empirical directly)
+      Note: there is NO blend step. PARTIAL means "not enough data yet - fall back to literature."
+      Only SUFFICIENT uses empirical rates directly.
+    test: >
+      With 2 labeled records → report["empirical"]["data_status"]=="INSUFFICIENT_DATA",
+        report["used_for_calculation"]["f"] == 0.60 (literature default).
+      With 4 labeled records → report["empirical"]["data_status"]=="PARTIAL",
+        report["used_for_calculation"]["f"] == 0.60 (literature default).
+      With 5+ labeled records → report["empirical"]["data_status"]=="SUFFICIENT",
+        report["used_for_calculation"]["f"] == f_empirical.
+
+  - id: F14C3
+    description: >
+      Literature defaults are: f=0.60, u=0.50 (UPDATE), c=0.40 (CHALLENGE).
+      The c and u values were intentionally set as c < u because CHALLENGE
+      catches a different, harder class of errors than UPDATE.
+    test: >
+      Import catch_rate_empirical. Assert _F_LIT == 0.60, _U_LIT == 0.50, _C_LIT == 0.40.
+      These values must not be swapped.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# IMPLEMENTATION REFERENCE
+# ─────────────────────────────────────────────────────────────────────────────
+
+implementation:
+  module: "eif/cost_model/catch_rate_empirical.py"
+  functions:
+    - "compute_session_catch_rates(provenance_chain, outcome_records: list[OutcomeRecord]) -> CatchRateReport"
+  mcp_tool: "eif_catch_rate_report (returns CatchRateReport with empirical f/c/u rates and compound error model)"
+
+research:
+  - "MOSAIC 2025 - constraint compliance orthogonal to task completion"
+  - "IFScale 2025 - 68% accuracy at high constraint density"
+  - "EIF V3 intent F14C1–F14C3"

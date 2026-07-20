@@ -1,0 +1,360 @@
+# EIF v3 - Engine Improvement Intent
+# ==============================================================================
+# Purpose: Close four structural engine gaps identified in the V2 cross-check
+#          audit notes.
+#
+# V3 scope: engine improvements only. No dashboard, no product UI.
+#           All features are topic-agnostic - the Maya gaming scenario is
+#           only a test fixture, not a domain constraint.
+#
+# Research sources:
+#   eif/research/foundations/replication_crisis.md
+#   eif/research/ai_agents/multi_agent_review.md
+#   eif/research/foundations/deutsch_epistemology.md
+#   eif/research/ai_agents/calibration.md
+# ==============================================================================
+
+id: eif-v3-scope
+version: "3.0"
+created: "2026-05-14"
+status: implemented  # F11–F14 all implemented (2026-05-15); F11/F14 user-journey gap deferred, see §known_tensions
+extends: eif-v2-scope
+
+features:
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # F11: Session Outcome Feedback Loop (closes F1C1 dormancy)
+  # ════════════════════════════════════════════════════════════════════════════
+
+  - id: F11
+    name: "Session outcome feedback loop - cross-session outcome store"
+    phase: CALIBRATE
+    module: "eif/eif/record/outcome_store.py"
+    extends: "eif/eif/calibrate/ece.py F1C1 (label-grounded ECE)"
+
+    problem: >
+      F1C1 (label-grounded ECE) was built and tested, but it activates only when
+      ≥ 30 sessions have outcome_observed populated. ProvenanceRecord already has
+      outcome_observed: bool | None field (added in V2). However, sessions are
+      in-memory and evaporate at process restart. There is no cross-session
+      store, no MCP tool to record outcomes, and no way for the user to
+      close the feedback loop. In every live deployment today, ECE is permanently
+      UNCALIBRATED because outcome_store doesn't exist.
+      Additionally, every session starts from max_entropy prior (P(H) = 0.5)
+      because there is no historical accuracy data. The architecture §5.4 defines
+      three prior strategies; Strategy 2 (Empirical Bayes from historical
+      accuracy) requires the outcome store.
+
+    solution: >
+      Add record/outcome_store.py with:
+        - OutcomeRecord (session_id, record_id, outcome: bool, domain, recorded_at)
+        - load_outcomes() → list[OutcomeRecord] from ~/.eif/outcome_store.json
+        - record_outcome(session_id, record_id, outcome, domain) → OutcomeRecord
+          (writes to disk, backward-compatible with missing file)
+        - get_calibration_pairs(domain=None) → (list[CalibrationResult proxies],
+          list[bool]) for compute_ece() F1C1
+        - compute_empirical_prior(domain=None) → float: accuracy rate across
+          labeled sessions; falls back to 0.5 when < PRIOR_EMPIRICAL_MIN sessions
+      Add MCP tool eif_record_outcome(session_id, record_id, outcome, domain=None).
+      Add MCP tool eif_calibration_report(domain=None) returning ECE state,
+      labeled_count, empirical_prior, domains covered.
+
+    constraints:
+      - id: F11C1
+        description: >
+          record_outcome() must write to ~/.eif/outcome_store.json. The store
+          is append-only: existing entries are never overwritten. Missing file
+          creates a new store; corrupted file logs warning and starts fresh.
+        test: >
+          Call record_outcome(session_id="s1", record_id="r1", outcome=False,
+          domain="gaming"). Assert file exists and contains the entry.
+          Call again with the same ids; assert store has 2 entries (append-only).
+
+      - id: F11C2
+        description: >
+          compute_empirical_prior(domain="gaming") must return the mean outcome
+          rate across all labeled records for that domain when >= PRIOR_EMPIRICAL_MIN
+          (10) labeled records exist. When < 10, returns 0.5 (max_entropy).
+        test: >
+          Seed store with 12 gaming records (8 outcome=True, 4 outcome=False).
+          Assert compute_empirical_prior("gaming") ≈ 0.667 (8/12).
+          Seed 5 records only; assert returns 0.5.
+
+      - id: F11C3
+        description: >
+          eif_calibration_report() must return labeled_count (total labeled
+          outcome records in store - OutcomeRecord rows, not unique session_ids),
+          ece_state ("LABEL_GROUNDED" when >= 30 labeled outcome records else
+          "UNCALIBRATED"), empirical_prior (per domain if available), and
+          sessions_to_grounded (max(0, 30 - labeled_count)).
+        test: >
+          Seed 25 records. Assert ece_state == "UNCALIBRATED" and
+          sessions_to_grounded == 5. Seed 35 records. Assert ece_state ==
+          "LABEL_GROUNDED" and sessions_to_grounded == 0.
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # F12: Hard-to-Vary Falsification Conditions (closes adversarial gaming gap)
+  # ════════════════════════════════════════════════════════════════════════════
+
+  - id: F12
+    name: "Hard-to-vary check on falsification conditions (Deutsch §4.2b)"
+    phase: FALSIFY
+    module: "eif/eif/falsify/hard_to_vary.py"
+    extends: "eif/eif/falsify/trivial_check.py (additive)"
+
+    problem: >
+      trivial_check.py catches vacuously satisfiable conditions (always/never/any).
+      The architecture framework §4.2b and §5.4 (Adversarial Gaming) identifies a
+      harder problem: conditions that are non-trivially worded but still too vague
+      to reliably falsify. An agent (or user) could provide:
+        "If performance is poor, the assumption is wrong"
+      This passes is_trivial() (no "always"/"never") but is easy-to-vary: "poor"
+      can be redefined retroactively. Deutsch: a falsification condition must be
+      hard-to-vary - changing the threshold, the procedure, or the observation
+      must produce a visibly different hypothesis being tested.
+
+    solution: >
+      Add falsify/hard_to_vary.py with check_hard_to_vary(condition, threshold,
+      test_procedure) → (is_vague: bool, reasons: list[str]):
+        Check 1 - THRESHOLD: must contain a specific number or quantified bound.
+          Qualitative-only language (high/low/significant/excessive/poor...) with
+          no numeric anchor → flag.
+        Check 2 - PROCEDURE: must name a specific tool, API, query, or measurement
+          method. Generic verbs ("check if", "verify that", "see if") with no
+          specific method named → flag.
+        Check 3 - CONDITION: must not contain adjustable language ("might",
+          "could indicate", "may suggest") that allows retroactive reinterpretation.
+      FalsificationCondition gains hard_to_vary_reasons: list[str] = [].
+      trivial_flag becomes True when EITHER is_trivial() OR check_hard_to_vary()
+      fires. FalsificationCondition.hard_to_vary_reasons populates with specific
+      reasons. Backward-compatible: field defaults to [].
+
+    research:
+      - paper: "Deutsch, D. (2011). The Beginning of Infinity. §Ch. 1"
+        finding: "Good explanations are hard to vary - operationalized to falsification conditions in architecture §4.2b"
+      - paper: "EIF Architecture framework §5.4 Adversarial Gaming"
+        finding: "Formal verification of non-trivial falsifiability is an open research problem; partial defense via Deutsch hard-to-vary check"
+
+    constraints:
+      - id: F12C1
+        description: >
+          A condition with qualitative-only threshold (no number) and a
+          procedure with no specific method → trivial_flag=True,
+          hard_to_vary_reasons non-empty.
+        test: >
+          build_condition("claim", "performance is poor", "high", "check if it works")
+          Assert fc.trivial_flag == True.
+          Assert "THRESHOLD" in "".join(fc.hard_to_vary_reasons) or
+                 "PROCEDURE" in "".join(fc.hard_to_vary_reasons).
+
+      - id: F12C2
+        description: >
+          A condition with a specific number in threshold AND a specific named
+          method in test_procedure AND no adjustable language → trivial_flag=False,
+          hard_to_vary_reasons=[].
+        test: >
+          build_condition("claim",
+            "if IGDB hype count < 100, claim is falsified",
+            "< 100",
+            "Query IGDB API for game hypes field; compare to threshold")
+          Assert fc.trivial_flag == False and fc.hard_to_vary_reasons == [].
+
+      - id: F12C3
+        description: >
+          A condition with adjustable language ("might be lower", "could indicate")
+          must set trivial_flag=True regardless of whether the threshold has a number.
+        test: >
+          build_condition("claim",
+            "data might be lower than expected",
+            "< 100",
+            "Query the API and compare")
+          Assert fc.trivial_flag == True and any("CONDITION" in r for r in
+          fc.hard_to_vary_reasons).
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # F13: Independent Replication - Extension B (convergent, not adversarial)
+  # ════════════════════════════════════════════════════════════════════════════
+
+  - id: F13
+    name: "Independent convergent replication (Extension B)"
+    phase: REPLICATE
+    module: "eif/eif/replicate/independent.py"
+    distinct_from: "F8 DASES (adversarial falsification)"
+
+    problem: >
+      The existing REPLICATE phase generates a protocol text (replicate/protocol.py)
+      and evaluates string agreement (replicate/divergence.py). F8 DASES does
+      adversarial falsification. Neither implements Extension B from the
+      architecture framework:
+        "a different agent, starting from scratch, using the same method,
+         arrives at the same conclusion"
+      CHALLENGE catches: logically defensible but wrong conclusions.
+      REPLICATION catches: non-reproducible conclusions - correct under the
+      original prior but sensitive to starting conditions.
+      Research: multi_agent_review.md §Missing Role: The Replicator Agent.
+      Without this, the engine cannot detect prior-dependent conclusions.
+
+    solution: >
+      Add replicate/independent.py with run_independent_replication(record):
+        Given a ProvenanceRecord:
+        1. Derive original routing verdict from record.calibration (minimum
+           posterior over HIGH-consequence claims; ACT/REVISE/HALT thresholds).
+        2. Re-derive routing from flat prior (P(H)=0.5) independently:
+           for each calibration result, compute flat_posterior = likelihood
+           (Bayesian update with equal priors; P(H|E) = P(E|H)*0.5/0.5 = P(E|H)).
+        3. Compare original vs. independent routing:
+           - CONVERGENT: both verdicts in same routing bucket (both ACT, both
+             REVISE, or both HALT)
+           - DIVERGENT: verdicts in different buckets → flag for human review
+        4. Return IndependentReplicationResult with:
+           original_routing, independent_routing, agreement_type,
+           prior_sensitivity (delta between original and independent min posteriors),
+           human_review_required (= diverged flag).
+           (Field names: original_routing/independent_routing - not original_verdict/independent_verdict;
+           diverged is derived from agreement_type=="DIVERGENT".)
+      Wire into eif_replicate MCP tool as key "independent_replication" in output dict.
+
+    research:
+      - paper: "multi_agent_review.md §The Missing Role: The Replicator Agent"
+        finding: "No current multi-agent system implements genuine replication; CHALLENGE ≠ REPLICATION"
+      - paper: "replication_crisis.md - Nosek et al. (2015) Reproducibility Project"
+        finding: "Peer review does not predict replicability (r=0.29); independent replication is the only reliable signal"
+      - paper: "EIF Architecture §Extension B"
+        finding: "Divergence = flag for human review, not auto-override"
+
+    constraints:
+      - id: F13C1
+        description: >
+          run_independent_replication() must return IndependentReplicationResult
+          with agreement_type in ("CONVERGENT", "DIVERGENT").
+          When there are no calibration results in the record, return
+          agreement_type="CONVERGENT" (vacuously - no evidence to compare).
+        test: >
+          Build a ProvenanceRecord with calibration=[CalibrationResult with
+          posterior=0.15, likelihood=0.2, prior=0.7] (HIGH-consequence, HALT
+          original). Assert agreement_type returned is a valid string.
+
+      - id: F13C2
+        description: >
+          When the original routing is HALT (posterior < THRESHOLD_HALT=0.20)
+          but flat-prior routing is REVISE (flat_posterior in [0.40, 0.70]),
+          agreement_type must be "DIVERGENT" and human_review_required=True.
+        test: >
+          Record with posterior=0.10, likelihood=0.50 (consequence=HIGH).
+          Original routing: HALT (0.10 < 0.20).
+          Flat posterior = likelihood = 0.50 → REVISE.
+          Assert agreement_type == "DIVERGENT" and human_review_required == True.
+
+      - id: F13C3
+        description: >
+          run_independent_replication() must never modify the ProvenanceRecord
+          or the session state. It is read-only.
+        test: >
+          Call run_independent_replication(record) twice with same record.
+          Assert both calls return identical results (deterministic).
+          Assert record is unchanged after each call.
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # F14: Empirical Catch Rate Measurement (grounds f/u/c in EIF data)
+  # ════════════════════════════════════════════════════════════════════════════
+
+  - id: F14
+    name: "Empirical catch rate measurement for compound error model"
+    phase: PROGRAMME
+    module: "eif/eif/cost_model/catch_rate_empirical.py"
+
+    problem: >
+      The compound error model (EIF Architecture §9.2) uses:
+        f = 0.6 (FALSIFY catch rate) from POPPER analogous mechanism
+        u = 0.5 (UPDATE detection probability) from LAPD analogous mechanism
+        c = 0.4 (CHALLENGE catch rate) from multi-agent literature
+      The cross-check audit §5.1 states explicitly: "These have not been measured
+      on an actual EIF implementation. They may be optimistic or pessimistic by
+      20–30%." Until EIF sessions are measured and these parameters updated from
+      real data, the compound error model is theoretically grounded but empirically
+      unverified.
+
+    solution: >
+      Add cost_model/catch_rate_empirical.py with:
+        compute_session_catch_rates(provenance_chain, outcome_records) → CatchRateReport:
+          f_empirical: fraction of HIGH-consequence wrong claims (outcome=False)
+                       that were caught by FALSIFY (SPRT REJECT or trivial_flag warning)
+          c_empirical: fraction of provenance records with CHALLENGE where counter_evidence was found
+                       (per-record aggregation; "sessions" in early prose = records here)
+          u_empirical: fraction of provenance records with UPDATE where routing changed
+                       (posterior moved across a threshold boundary; per-record)
+          compound_error_residual: (1-f) × (1-c) × (1-u) using empirical rates
+                       (ε factor = 1 unless a domain-specific error multiplier is defined)
+          sessions_measured: count of provenance records with ground-truth outcomes
+        update_catch_rate_store(report) → writes to ~/.eif/catch_rates.json
+        load_catch_rate_store() → CatchRateReport | None
+      Add MCP tool eif_catch_rate_report() returning current empirical estimates
+      alongside literature defaults (f=0.6, u=0.5, c=0.4) for comparison.
+
+    constraints:
+      - id: F14C1
+        description: >
+          compute_session_catch_rates() must compute f_empirical as:
+          (HIGH-consequence wrong claims caught by FALSIFY) / (total HIGH-consequence
+          wrong claims). A claim is "caught" if its SPRT decision == "REJECT" or
+          its FalsificationCondition.trivial_flag == True (which would have blocked it).
+          Returns 0.0 when denominator is 0 (no labeled wrong claims).
+        test: >
+          Build provenance_chain with 2 records of equal n_at_risk (e.g. both with
+          n_at_risk=1): one with SPRT REJECT (caught), one without REJECT.
+          Build outcome_records marking both as wrong.
+          Assert f_empirical == 0.5 (1 caught out of 2 wrong).
+          Note: implementation weights each wrong record by max(1, n_at_risk); use
+          n_at_risk=1 for each record to get exactly 0.5 in the simplified test case.
+
+      - id: F14C2
+        description: >
+          When < 3 sessions are in the catch rate store, eif_catch_rate_report()
+          must clearly mark all empirical rates as "INSUFFICIENT_DATA" and use
+          literature defaults for the compound error calculation.
+        test: >
+          Empty store (0 sessions). Assert report["data_status"] ==
+          "INSUFFICIENT_DATA" and report["f_used"] == 0.6 (literature default).
+
+      - id: F14C3
+        description: >
+          When >= 5 sessions with outcome data exist, the compound error residual
+          must be computed using empirical rates where measured; literature defaults
+          fill any legs (c or u) that could not be measured because CHALLENGE or
+          UPDATE phases were not used in the corpus. Both empirical and literature
+          residuals must be returned for comparison.
+        test: >
+          Seed store with 5 sessions with outcomes (FALSIFY ran; CHALLENGE/UPDATE did not).
+          Assert "compound_error_empirical" in report and
+                 "compound_error_literature" in report.
+          compound_error_empirical must be non-null (uses lit defaults for missing c/u legs).
+
+constraint_satisfiability:
+  conflicts_checked:
+    - "F11 (outcome store) vs F1C1 (label-grounded ECE): compatible - F11 provides the store F1C1 reads"
+    - "F12 (hard-to-vary) vs existing trivial_flag: compatible - trivial_flag widens to cover both checks; backward-compatible"
+    - "F13 (independent replication) vs F8 (DASES adversarial): compatible - distinct modules, different failure modes, additive not competing"
+    - "F14 (catch rates) vs compound error model: compatible - F14 adds empirical measurement alongside existing literature estimates"
+  known_tensions:
+    - "F11 outcome store writes to disk - tests must use temp directories to avoid polluting ~/.eif/"
+    - "F13 independent replication is read-only and deterministic - no LLM calls required"
+    - "F14 catch rates require F11 outcome store as prerequisite for meaningful measurements"
+    - >
+      USER JOURNEY INTEGRATION GAP (2026-05-15): F11 adds eif_record_outcome() as an MCP tool,
+      but NO step in eif_user_journey_intent.yaml S0–S7 describes when or how a user calls it.
+      Without user-initiated outcome recording, the outcome store is never populated.
+      Consequence: F1C1 (label-grounded ECE) remains permanently UNCALIBRATED in every live
+      deployment, and F14 catch rates remain INSUFFICIENT_DATA forever.
+      RESOLUTION NEEDED: either (a) add a S7 or S2.5 step that prompts users to record outcomes
+      after a decision resolves ("Did EIF's HALT turn out to be correct?"), or (b) add an
+      automated outcome signal (e.g., if the user manually overrides a HALT and the agent then
+      propagates an error, that turn is automatically recorded as outcome=True on the HALT).
+      This is the most critical V3 product gap. Without it, F11 and F14 are dead code in
+      all live deployments.
+      DEFERRED (2026-05-15, GAP-D3-3): Resolution path chosen is option (a) - add a post-HALT
+      outcome prompt to eif_user_journey_intent.yaml. This requires a product decision on where
+      in the journey to surface it (S3 immediately after HALT? S7 as a re-engagement hook?).
+      Pre-condition: first external users. Cannot design this step without real
+      user behavior data. Deferred. Unblocks: F1C1 LABEL_GROUNDED state
+      (unlocks label-grounded ECE for all subsequent sessions); F14 empirical catch rates
+      (unlocks replacing literature defaults f=0.6, u=0.5, c=0.4 with measured values).

@@ -1,0 +1,128 @@
+# EIF Native Tools - IVD Intent Artifact
+# ==============================================================================
+# Problem: EIF's P1 (code execution) and P3 (web search) tiers currently depend
+#          on the HOST agent's tools. If the host has no web search or code
+#          executor, FALSIFY silently falls back to P4 (parametric LLM), which
+#          is circular and provides zero epistemic value.
+#
+# Solution: EIF ships its own P1 sandbox and P3 search client. The agent hosting
+#           EIF needs zero special tooling - EIF is self-sufficient for evidence
+#           collection regardless of the host environment.
+#
+# Research basis:
+#   - DDGS (deedy5/ddgs) v9.13.0, 2605 stars, MIT, no API key required
+#     Source: github.com/deedy5/ddgs (verified April 2026)
+#   - Existing P1 pattern: eif/eif/falsify/evidence_collector.py (subprocess sandbox)
+#   - FActScore arXiv:2305.14251: evidence must come from external source
+#   - ReAct arXiv:2210.03629: tool observations are evidence, not model reasoning
+# ==============================================================================
+
+intent_id: eif-native-tools-v1
+version: "1.0"
+status: implemented  # P1 native tools (Python code execution for numerical claims) implemented in falsify/native_tools.py as of 2026-05-15
+created: "2026-05-08"
+
+problem: |
+  EIF v3's FALSIFY phase accepts a web_search_fn callable from the host agent.
+  If the host provides no callable (MCP server context, standalone library use,
+  or host without search tools), collect_web_search() receives None and silently
+  routes to P4 parametric - circular evidence that provides no epistemic value.
+
+  This means EIF's stated "0% P4" guarantee is only valid when the host agent
+  happens to have web search configured. In standalone MCP server mode (the
+  intended production deployment) there is no host callable.
+
+  Same issue for P1: the code template system generates Python, but execution
+  relies on subprocess being accessible in the right environment. Native wrapping
+  makes this explicit and testable independently of the host.
+
+solution: |
+  Create eif/eif/falsify/native_tools.py with two self-sufficient functions:
+
+  1. native_search(query, max_results=5) -> str
+     Uses DDGS (deedy5/ddgs) - no API key, no host dependency.
+     Returns concatenated title + body snippets as a single evidence string,
+     compatible with the existing web_search_fn interface in collect_web_search().
+     Source: github.com/deedy5/ddgs
+
+  2. native_run_code(code, timeout=10) -> tuple[str, bool]
+     Thin wrapper around subprocess execution with restricted builtins check.
+     Validates the generated code template before execution.
+     Returns (output_str, success_bool).
+
+  Both functions are optional soft-imports: if ddgs is not installed,
+  native_search raises ImportError with installation instructions.
+  If subprocess is not available, native_run_code returns ("UNAVAILABLE", False).
+
+  Integration point: eif/eif/falsify/evidence_collector.py collect_evidence()
+  checks for web_search_fn=None and substitutes native_search automatically.
+  This is a one-line change - no interface breakage.
+
+constraints:
+
+  - id: NT1
+    description: >
+      native_search must return a non-empty string containing title and body
+      content from at least one search result when queried with a factual claim.
+    test: >
+      Call native_search("GDPR Article 17 right to erasure", max_results=3).
+      PASS: returned string contains "GDPR" or "erasure" and len > 100.
+      FAIL: empty string or raises non-ImportError exception.
+
+  - id: NT2
+    description: >
+      native_search must handle network failures gracefully: return empty string
+      (not raise), allowing FALSIFY to fall through to P4 as a last resort.
+    test: >
+      Monkey-patch DDGS().text to raise ConnectionError.
+      PASS: native_search returns "" without raising.
+      FAIL: raises any exception.
+
+  - id: NT3
+    description: >
+      native_run_code must execute a valid EIF code template and return the
+      JSON verdict string produced by the template.
+    test: >
+      Pass the latency benchmark template code (from _CODE_TEMPLATES in
+      evidence_collector.py) to native_run_code.
+      PASS: returns (json_string, True) where json_string contains "verdict".
+      FAIL: returns ("", False) or raises.
+
+  - id: NT4
+    description: >
+      When web_search_fn=None is passed to collect_evidence(), the function
+      must automatically use native_search for P3 - no caller change needed.
+    test: >
+      Call collect_evidence(claim_text="GDPR breach notification 72 hours",
+        falsification_condition="If GDPR mandates a breach notification window other than 72 hours, this claim fails",
+        coordinator_tool_outputs=[], web_search_fn=None).
+      PASS: result.probe_tier == "P3_WEB_SEARCH" and result.evidence_source
+            contains "DDGS" or "native".
+      FAIL: result.probe_tier == "P4_PARAMETRIC".
+
+  - id: NT5
+    description: >
+      If ddgs is not installed, native_search raises ImportError with a clear
+      installation message ("pip install ddgs").
+    test: >
+      Mock import failure for ddgs. Call native_search("test").
+      PASS: raises ImportError with "pip install ddgs" in message.
+      FAIL: raises different exception or returns silently.
+
+  - id: NT6
+    description: >
+      native_search result must be parseable by the existing is_relevant()
+      and key_term extraction logic in collect_web_search(). Format must be
+      compatible with the current web_search_fn interface.
+    test: >
+      Pass native_search result to is_relevant("GDPR Article 17", result).
+      PASS: is_relevant returns True.
+      FAIL: returns False on clearly relevant content.
+
+validation_note: "Validation scripts and evidence reports available on request via GitHub Discussions."
+
+source_reference: |
+  # Source: github.com/deedy5/ddgs (deedy5/ddgs, MIT, 2605 stars, April 2026)
+  from ddgs import DDGS
+  results = DDGS().text(query, max_results=max_results)
+  # Returns: list[dict] with keys: title, href, body

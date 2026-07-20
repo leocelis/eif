@@ -1,0 +1,89 @@
+[build-system]
+requires      = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name            = "eif-engine"
+version         = "4.1.0"
+description     = "Epistemic Integrity Framework - the scientific method applied to AI agent reasoning"
+keywords        = ["ai-safety", "agents", "hallucination", "scientific-method", "mcp", "bayesian", "sycophancy", "epistemic-integrity"]
+classifiers     = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+readme          = "README.md"
+requires-python = ">=3.11"
+license         = { text = "MIT" }
+
+dependencies = [
+    "pydantic>=2.0",
+    "scipy>=1.11",
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+mcp   = ["mcp>=1.0"]
+monica = [
+    "sentence-transformers>=2.2",
+]
+# F16 alias - the intent document references `pip install eif-engine[transformers]`
+transformers = [
+    "sentence-transformers>=2.2",
+]
+sdk = [
+    "openai>=1.0",
+    "httpx>=0.27",
+]
+sdk-langchain = [
+    "openai>=1.0",
+    "httpx>=0.27",
+    "langchain-core>=0.2",
+]
+full  = [
+    "mcp>=1.0",
+    "sentence-transformers>=2.2",
+    "fpdf2>=2.7",
+    "openai>=1.0",
+    "langchain-core>=0.2",
+]
+pdf   = [
+    "fpdf2>=2.7",
+]
+server = [
+    "mcp>=1.0",
+    "uvicorn>=0.27",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "ruff>=0.4",
+]
+
+[project.urls]
+Homepage      = "https://github.com/leocelis/eif"
+Repository    = "https://github.com/leocelis/eif"
+Issues        = "https://github.com/leocelis/eif/issues"
+Changelog     = "https://github.com/leocelis/eif/blob/main/CHANGELOG.md"
+
+[project.scripts]
+eif-mcp-server      = "eif.mcp_server.server:main"
+eif-mcp-http-server = "eif.mcp_server.http_server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["eif"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]

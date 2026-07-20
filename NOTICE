@@ -1,0 +1,17 @@
+EIF (Epistemic Integrity Framework)
+Copyright (c) 2026 Leo Celis
+
+Licensed under the MIT License (see LICENSE).
+
+This product can, through optional extras, depend on third-party packages
+distributed under the Apache License 2.0. Per Apache-2.0 Section 4(c),
+their attributions are noted here:
+
+  - openai (Apache-2.0) - optional, `sdk` / `full` extras
+    Copyright OpenAI. https://github.com/openai/openai-python
+  - sentence-transformers (Apache-2.0) - optional, `monica` / `transformers` / `full` extras
+    Copyright UKP Lab, TU Darmstadt. https://github.com/UKPLab/sentence-transformers
+
+Core dependencies (pydantic: MIT; scipy, numpy: BSD-3-Clause) and optional
+extras (mcp: MIT; httpx: BSD-3-Clause; uvicorn: BSD-3-Clause; fpdf2:
+LGPL-3.0, `pdf` extra) retain their respective licenses.

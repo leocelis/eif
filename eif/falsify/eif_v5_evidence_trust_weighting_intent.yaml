@@ -1,0 +1,273 @@
+intent_id: eif_v5_evidence_trust_weighting
+version: "1.0"
+status: implemented
+created: "2026-06-17"
+updated: "2026-06-17"
+
+problem: |
+  The eif_verify orchestrator in eif/mcp_server/server.py computes the posterior
+  for every probed claim with a TIER-BLIND, CONFIDENCE-BLIND line:
+
+      evidence_supports = evidence.verdict == "SUPPORTS"
+      posterior, _ = compute_posterior(0.5, evidence_supports)
+
+  compute_posterior (eif/calibrate/bayesian.py) then applies a FLAT likelihood of
+  0.8 (SUPPORTS) / 0.2 (CONTRADICTS) when no likelihood_estimate is passed. The
+  consequence: a single P3 web-search keyword match (confidence ~0.65) produces
+  the SAME posterior (0.8 → HIGH/ACT) as a P1 code-execution result. The
+  evidence's probe_tier and confidence are discarded from the Bayesian update.
+
+  Two compounding holes:
+    1. A single uncorroborated web result can drive a HIGH-consequence claim to
+       ACT - exactly the retrieval-corruption attack surface PoisonedRAG targets.
+    2. apply_domain_ceiling() in eif/calibrate/ece.py lets P3 web evidence BYPASS
+       the healthcare/engineering posterior safety ceiling alongside the
+       direct-observation tiers P1/P2 - so unverifiable web text can push a
+       regulated-domain claim above the ceiling it exists to enforce.
+
+solution: |
+  Make the posterior tier-and-confidence aware, add a corroboration gate, and
+  remove P3 from the domain-ceiling bypass.
+
+    A. A deterministic, zero-LLM trust function tier_confidence_likelihood()
+       (eif/calibrate/trust.py) maps (probe_tier, confidence, evidence_supports,
+       corroborated) → a Bayesian likelihood. Higher tiers and higher confidence
+       move the likelihood (and therefore the posterior) further from the 0.5
+       prior. A single uncorroborated P3 web result cannot reach the ACT
+       threshold (0.70); a P0/P1 result or a ≥2-independent-source corroborated
+       P3 result can.
+
+    B. collect_web_search() (eif/falsify/evidence_collector.py) now tracks the
+       number of DISTINCT registrable domains observed across search iterations.
+       Two snippets from the SAME domain count once (echo/duplicate guard).
+       independent_source_count >= 2 sets corroborated = True.
+
+    C. eif_verify derives the likelihood from the evidence's tier/confidence/
+       corroboration, and adds a HIGH-consequence corroboration gate: a single
+       uncorroborated P3 SUPPORTS for a HIGH-consequence claim HALTs rather than
+       PASSes. The session response now also exposes evidence_tier_mix and
+       p0_coverage_pct so callers can see the quality mix behind a verdict.
+
+    D. apply_domain_ceiling() no longer exempts P3 - only the direct-observation
+       tiers P1/P2 (and authoritative P0, which is not a ceiling-domain proxy)
+       bypass the ceiling. Web evidence is now subject to the regulated-domain
+       posterior ceiling.
+
+  The EIF engine stays zero-LLM and zero-network: the trust function is pure
+  arithmetic, and domain extraction is regex over already-retrieved text.
+
+research_basis:
+  - paper: "PoisonedRAG: Knowledge Corruption Attacks to Retrieval-Augmented Generation"
+    ref: "arXiv:2402.07867, USENIX Security 2025"
+    finding: |
+      Injecting as few as 5 crafted documents into a retrieval corpus yields a
+      ~90% attack success rate; single-document variants succeed against weak
+      corroboration. A verifier that treats one retrieved match as decisive is
+      directly exploitable. Basis for the corroboration gate (TW2/TW3/TW4/TW5)
+      and for discounting single-source web evidence (TW1).
+  - paper: "The Power of Noise: Redefining Retrieval for RAG Systems"
+    ref: "arXiv:2401.14887"
+    finding: |
+      Distracting / low-relevance retrieved documents degrade RAG accuracy even
+      when a correct document is also present. Single keyword-match web evidence
+      is the noisy regime; it should not carry the weight of direct observation.
+      Basis for the tier-weighted likelihood (TW1) and the P3 ceiling change (TW6).
+  - paper: "POPPER: Automated Hypothesis Validation with Agentic Sequential Falsifications"
+    ref: "arXiv:2502.09858, ICML 2025"
+    finding: "Evidence must be independent; corroboration across independent sources is the test."
+  - paper: "Physics-Informed Metacognition: Improving LLM Self-Knowledge via Physical Constraints"
+    ref: "OpenReview LF4RSTZUtA, 2025"
+    finding: "Domain ceilings (37.2% ECE reduction) must bind unless evidence is direct observation (P1/P2)."
+
+constraints:
+
+  - id: TW1
+    title: Likelihood is tier- and confidence-aware
+    description: |
+      The posterior update in eif_verify must derive likelihood_estimate from
+      evidence.probe_tier and evidence.confidence via tier_confidence_likelihood(),
+      not the flat 0.8/0.2 default. A higher-tier, higher-confidence SUPPORTS
+      must yield a strictly larger likelihood than a lower-tier, lower-confidence
+      SUPPORTS.
+    test: |
+      from eif.calibrate.trust import tier_confidence_likelihood
+      assert (tier_confidence_likelihood("P1_NATIVE_CODE", 0.9, True, False)
+              > tier_confidence_likelihood("P3_WEB_SEARCH", 0.65, True, False))
+    rationale: "The Power of Noise arXiv:2401.14887 - noisy single-source web evidence must weigh less than direct observation."
+
+  - id: TW2
+    title: Single uncorroborated P3 SUPPORTS cannot reach ACT
+    description: |
+      With prior 0.5, the posterior produced by a single uncorroborated
+      P3_WEB_SEARCH SUPPORTS at typical web confidence (0.65) must be strictly
+      below THRESHOLD_ACT (0.70).
+    test: |
+      from eif.calibrate.bayesian import compute_posterior
+      from eif.calibrate.trust import tier_confidence_likelihood
+      L = tier_confidence_likelihood("P3_WEB_SEARCH", 0.65, True, False)
+      assert compute_posterior(0.5, True, L)[0] < 0.70
+    rationale: "PoisonedRAG arXiv:2402.07867 - a single retrieved match must not be decisive."
+
+  - id: TW3
+    title: HIGH-consequence claim + single uncorroborated P3 SUPPORTS → HALT
+    description: |
+      eif_verify over one HIGH-consequence claim whose only evidence is an
+      uncorroborated P3_WEB_SEARCH SUPPORTS must return verdict "HALT" with a
+      halted_claims reason containing "WEAK_EVIDENCE_HIGH_CONSEQUENCE". The
+      conservative block is scoped to HIGH-consequence claims only to bound the
+      false-HALT tax on routine (MEDIUM/LOW) claims.
+    test: |
+      result = await eif_verify(session_id=..., decision=..., claims=[{
+          "text": "...", "claim_type": "ASSUMED", "consequence_of_wrong": "HIGH"}])
+      # web search stubbed to a single-domain SUPPORTS
+      assert result["verdict"] == "HALT"
+      assert any("WEAK_EVIDENCE_HIGH_CONSEQUENCE" in h.get("reason", "")
+                 for h in result["halted_claims"])
+    rationale: "PoisonedRAG arXiv:2402.07867 - high-consequence decisions need corroboration, not one source."
+
+  - id: TW4
+    title: Two distinct-domain web sources set corroborated=True
+    description: |
+      collect_web_search() given a search fn whose result text cites two DISTINCT
+      registrable domains must return independent_source_count >= 2 and
+      corroborated is True on the EvidenceResult.
+    test: |
+      from eif.falsify.evidence_collector import collect_web_search
+      def fn(q): return ("Study confirms claim [https://www.nih.gov/x]. "
+                         "Independent review agrees [https://nature.com/y].")
+      r = collect_web_search("vitamin D reduces fracture risk in adults", fn, max_iterations=1)
+      assert r.independent_source_count >= 2 and r.corroborated is True
+    rationale: "POPPER arXiv:2502.09858 - corroboration requires independent sources."
+
+  - id: TW5
+    title: Echo/duplicate (same-domain) sources count once
+    description: |
+      collect_web_search() given a result that cites two snippets from the SAME
+      registrable domain must return independent_source_count == 1 and
+      corroborated is False. Same-domain echo is not independent corroboration.
+    test: |
+      from eif.falsify.evidence_collector import collect_web_search
+      def fn(q): return ("Claim verified [https://www.example.com/a]. "
+                         "Same site, different page [https://example.com/b].")
+      r = collect_web_search("vitamin D reduces fracture risk in adults", fn, max_iterations=1)
+      assert r.independent_source_count == 1 and r.corroborated is False
+    rationale: "PoisonedRAG arXiv:2402.07867 - duplicated/echoed content inflates apparent support."
+
+  - id: TW6
+    title: P3 no longer bypasses the domain posterior ceiling
+    description: |
+      apply_domain_ceiling() must clamp a P3_WEB_SEARCH posterior in a constrained
+      domain, while the direct-observation tier P1_NATIVE_CODE remains exempt
+      (bypass preserved). This intentionally narrows the prior F1C3 bypass tuple
+      from (P1, P2, P3) to (P1, P2).
+    test: |
+      from eif.calibrate.ece import apply_domain_ceiling
+      p3, c3 = apply_domain_ceiling(0.97, "healthcare", "P3_WEB_SEARCH")
+      assert c3 is True and p3 <= 0.95
+      p1, c1 = apply_domain_ceiling(0.97, "healthcare", "P1_NATIVE_CODE")
+      assert c1 is False
+    rationale: "Physics-Informed Metacognition LF4RSTZUtA - only direct observation may exceed a regulated-domain ceiling."
+
+  - id: TW7
+    title: P0/P1 SUPPORTS still reaches ACT
+    description: |
+      A high-confidence direct-observation tier (P1_NATIVE_CODE at confidence 0.9)
+      SUPPORTS must still yield a posterior >= THRESHOLD_ACT (0.70). The cap on
+      P3 (TW2) must not suppress legitimate high-quality evidence.
+    test: |
+      from eif.calibrate.bayesian import compute_posterior
+      from eif.calibrate.trust import tier_confidence_likelihood
+      L = tier_confidence_likelihood("P1_NATIVE_CODE", 0.9, True, False)
+      assert compute_posterior(0.5, True, L)[0] >= 0.70
+    rationale: "Tier weights resolve the TW2-vs-TW7 tension - see constraint_satisfiability."
+
+  - id: TW8
+    title: CONTRADICTS still triggers HALT regardless of tier
+    description: |
+      A CONTRADICTS verdict from any tier must still produce a HALT in eif_verify.
+      The trust-weighting change must not weaken the existing contradiction path.
+    test: |
+      result = await eif_verify(...)  # claim whose only evidence is CONTRADICTS
+      assert result["verdict"] == "HALT"
+      assert any(h["claim"] for h in result["halted_claims"])
+    rationale: "Existing falsification behavior must be preserved (regression guard)."
+
+  - id: TW9
+    title: Session exposes evidence-tier mix + P0 coverage
+    description: |
+      The eif_verify response dict must contain evidence_tier_mix (dict of
+      probe_tier → count over evidence_trails) and p0_coverage_pct (float - the
+      percentage of probed claims whose evidence came from P0_HOST_TOOL).
+    test: |
+      result = await eif_verify(...)
+      assert isinstance(result["evidence_tier_mix"], dict)
+      assert isinstance(result["p0_coverage_pct"], float)
+    rationale: "Surface the evidence quality mix so callers can audit what backs a verdict."
+
+constraint_satisfiability:
+  checked: true
+  tensions:
+    - id: "TW2 vs TW7"
+      conflict: |
+        TW2 requires a single uncorroborated P3 SUPPORTS to land BELOW ACT (0.70),
+        while TW7 requires a P0/P1 SUPPORTS to land AT OR ABOVE ACT. Both operate
+        on the same prior (0.5) and the same compute_posterior path.
+      resolution: |
+        Resolved by the tier weights in tier_confidence_likelihood(): with
+        P_SPAN = 0.35 and prior 0.5, likelihood ≈ 0.5 + 0.35 * tier_weight * conf.
+        P1 conf 0.9 → trust 0.81 → L ≈ 0.7835 → posterior ≈ 0.78 (>= 0.70, TW7 ✓).
+        P3 single conf 0.65 → trust 0.3575 → L ≈ 0.6251 → posterior ≈ 0.63
+        (< 0.70, TW2 ✓). P3 corroborated conf 0.75 → trust 0.6375 → L ≈ 0.7231
+        → posterior ≈ 0.72 (>= 0.70), so corroborated web CAN act for non-HIGH
+        claims. The thresholds are numerically separated, so both hold
+        simultaneously. Verified in tests/unit/test_evidence_trust_weighting.py.
+    - id: "TW3 false-HALT tax"
+      conflict: |
+        A blanket "single web source → HALT" would over-block routine claims and
+        inflate the false-positive (false-HALT) rate.
+      resolution: |
+        The conservative block (TW3) is SCOPED to HIGH-consequence claims only
+        (consequence_of_wrong == "HIGH"). MEDIUM/LOW claims follow the normal
+        posterior-threshold routing, bounding the false-HALT tax.
+    - id: "TW6 narrows prior bypass"
+      conflict: |
+        Prior F1C3 (eif_evidence_collection / ece.py) exempted P1/P2/P3 from the
+        domain ceiling. Removing P3 changes documented behavior and an existing
+        test (tests/unit/test_ece_v2.py::test_p3_evidence_skips_clamp).
+      resolution: |
+        Intentional narrowing: P3 web text is not direct observation and must not
+        exceed a regulated-domain ceiling (PoisonedRAG / Power of Noise). The
+        bypass tuple becomes (P1_NATIVE_CODE, P2_EXPERIMENTAL). The affected test
+        is updated to assert the new clamp behavior, with a comment referencing
+        this intent (TW6).
+
+notes:
+  - |
+    Domain extraction (collect_web_search) parses registrable domains from URLs
+    present in the search result text. EIF's native DDGS backend (native_tools.py
+    native_search) formats each result as "title. body [href]", so href URLs are
+    present and domain extraction is real, not a fallback. When a search fn returns
+    text with NO URLs at all, independent_source_count falls back to 0 and
+    corroborated stays False (conservative: absence of identifiable sources is not
+    corroboration). This is documented in the _extract_domains helper.
+  - |
+    The trust function is deterministic and makes ZERO LLM calls and ZERO network
+    calls, preserving tech_spec.md C1/C4 (engine purity).
+
+verification_checklist:
+  - "[ ] TW1: tier_confidence_likelihood P1>P3 single"
+  - "[ ] TW2: single P3 SUPPORTS posterior < 0.70"
+  - "[ ] TW3: HIGH-consequence + single P3 SUPPORTS → HALT with WEAK_EVIDENCE_HIGH_CONSEQUENCE"
+  - "[ ] TW4: two distinct domains → corroborated True, count >= 2"
+  - "[ ] TW5: same domain twice → corroborated False, count == 1"
+  - "[ ] TW6: P3 clamped by domain ceiling, P1 still exempt"
+  - "[ ] TW7: P1 SUPPORTS posterior >= 0.70"
+  - "[ ] TW8: CONTRADICTS → HALT preserved"
+  - "[ ] TW9: response has evidence_tier_mix + p0_coverage_pct"
+
+related_artifacts:
+  prior_intent: "eif/falsify/eif_evidence_collection_intent.yaml"
+  trust_module: "eif/calibrate/trust.py"
+  ceiling_module: "eif/calibrate/ece.py"
+  orchestrator: "eif/mcp_server/server.py (eif_verify)"
+  tests: "tests/unit/test_evidence_trust_weighting.py"

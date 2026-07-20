@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EIF - Epistemic Integrity Framework</title>
+<meta name="description" content="Apply the scientific method to every assumption your AI agent makes. Python library + MCP server. 24 tools, 8-phase pipeline, routes ACT / REVISE / HALT.">
+<style>
+  :root {
+    --bg: #0d1117; --fg: #e6edf3; --muted: #8b949e; --accent: #7c6cf0;
+    --card: #161b22; --border: #30363d; --code: #1c2128; --ok: #3fb950; --halt: #f85149; --revise: #d29922;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --accent: #5b4bd6;
+            --card: #f6f8fa; --border: #d1d9e0; --code: #f6f8fa; }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--fg); font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
+  header { padding: 88px 0 56px; text-align: center; }
+  h1 { font-size: 2.4rem; letter-spacing: -0.02em; }
+  .tagline { color: var(--muted); font-size: 1.25rem; margin-top: 12px; }
+  .cta { margin-top: 32px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn { display: inline-block; padding: 10px 22px; border-radius: 8px; text-decoration: none; font-weight: 600; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-ghost { border: 1px solid var(--border); color: var(--fg); }
+  section { padding: 40px 0; border-top: 1px solid var(--border); }
+  h2 { font-size: 1.5rem; margin-bottom: 16px; }
+  p.lead { color: var(--muted); }
+  pre { background: var(--code); border: 1px solid var(--border); border-radius: 8px; padding: 18px; overflow-x: auto; font: 13.5px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; margin-top: 16px; }
+  .phases { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-top: 20px; }
+  .phase { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+  .phase b { color: var(--accent); display: block; font-size: 0.85rem; letter-spacing: 0.06em; }
+  .phase span { color: var(--muted); font-size: 0.88rem; }
+  .routes { display: flex; gap: 12px; margin-top: 20px; flex-wrap: wrap; }
+  .route { flex: 1 1 200px; border-radius: 8px; padding: 14px 16px; border: 1px solid var(--border); background: var(--card); }
+  .route b { font-size: 1rem; }
+  .act b { color: var(--ok); } .revise b { color: var(--revise); } .halt b { color: var(--halt); }
+  .route span { color: var(--muted); font-size: 0.88rem; display: block; margin-top: 4px; }
+  footer { padding: 40px 0 64px; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.9rem; text-align: center; }
+  footer a { color: var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>EIF</h1>
+  <p class="tagline">Epistemic Integrity Framework<br>Apply the scientific method to every assumption your AI agent makes.</p>
+  <div class="cta">
+    <a class="btn btn-primary" href="https://github.com/leocelis/eif">View on GitHub</a>
+    <a class="btn btn-ghost" href="https://github.com/leocelis/eif#quick-start">Quick start</a>
+  </div>
+</header>
+
+<section>
+  <h2>The problem</h2>
+  <p class="lead">AI agents compound errors. Each assumption that goes unchallenged becomes the foundation for the next one. The dominant failure is not hallucinated facts: it is unchallenged assumptions that are never tested against evidence.</p>
+</section>
+
+<section>
+  <h2>The pipeline</h2>
+  <p class="lead">EIF is a Python library and MCP server (24 tools) that runs an 8-phase scientific-method pipeline on every load-bearing claim. The core engine is deterministic local math: no LLM calls, no telemetry. Self-host it, or use the optional hosted alpha.</p>
+  <div class="phases">
+    <div class="phase"><b>DECLARE</b><span>Classify every assumption: KNOWN / ASSUMED / GUESSED</span></div>
+    <div class="phase"><b>FALSIFY</b><span>Collect independent evidence (host tools, code, web)</span></div>
+    <div class="phase"><b>CAUSAL_GATE</b><span>Pearl causal levels; confounders, disjunctive bias</span></div>
+    <div class="phase"><b>CALIBRATE</b><span>Bayesian posterior, trust-weighted by evidence tier</span></div>
+    <div class="phase"><b>CHALLENGE</b><span>Adversarial critic with counter-evidence</span></div>
+    <div class="phase"><b>UPDATE</b><span>Sequential Bayes; EIG stopping rule</span></div>
+    <div class="phase"><b>EXPLAIN</b><span>Hard-to-vary check on the mechanism</span></div>
+    <div class="phase"><b>RECORD</b><span>Provenance record; EU AI Act mapping</span></div>
+  </div>
+  <div class="routes">
+    <div class="route act"><b>ACT</b><span>Evidence supports; safe to proceed</span></div>
+    <div class="route revise"><b>REVISE</b><span>Assumptions unresolved; moderate confidence</span></div>
+    <div class="route halt"><b>HALT</b><span>Evidence contradicts a high-consequence claim</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>Install</h2>
+<pre>git clone https://github.com/leocelis/eif && cd eif
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[mcp]"
+
+# stdio MCP server (Cursor / Claude Desktop / Claude Code)
+eif-mcp-server</pre>
+  <p class="lead" style="margin-top:14px">Self-hosted, everything stays on your machine. A private-alpha hosted endpoint is also available; see the README for both paths.</p>
+</section>
+
+<footer>
+  <p>MIT licensed · <a href="https://github.com/leocelis/eif">github.com/leocelis/eif</a> · Maintained by <a href="https://github.com/leocelis">Leo Celis</a></p>
+  <p style="margin-top:8px"><a href="https://github.com/leocelis/eif/blob/main/LEGAL.md">Legal</a> · <a href="https://github.com/leocelis/eif/blob/main/PRIVACY_POLICY.md">Privacy</a> · <a href="https://github.com/leocelis/eif/blob/main/SECURITY.md">Security</a></p>
+</footer>
+
+</div>
+</body>
+</html>

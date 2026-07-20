@@ -1,0 +1,89 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,mcp]"
+
+      - name: Run tests
+        run: pytest -q
+
+  lint:
+    name: Ruff
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ruff
+        run: pip install 'ruff>=0.4'
+
+      - name: Ruff check
+        run: ruff check eif/ tests/ examples/
+
+  compliance:
+    name: TrustLint (EU AI Act)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install TrustLint
+        run: |
+          python -m pip install --upgrade pip
+          pip install 'trustlint>=2.0.1'
+
+      - name: Scan LLM-facing artifacts
+        run: chmod +x scripts/compliance/check.sh && ./scripts/compliance/check.sh
+
+  compliance-runtime:
+    name: ComplyEdge runtime (BYOK)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Runtime /v1/check probe
+        env:
+          COMPLYEDGE_API_KEY: ${{ secrets.COMPLYEDGE_API_KEY }}
+        run: |
+          if [ -z "${COMPLYEDGE_API_KEY:-}" ]; then
+            echo "COMPLYEDGE_API_KEY not configured - skipping runtime probe"
+            exit 0
+          fi
+          chmod +x scripts/compliance/runtime_check.sh
+          ./scripts/compliance/runtime_check.sh

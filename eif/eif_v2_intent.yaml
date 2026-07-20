@@ -1,0 +1,779 @@
+# EIF v2 - Master Scope Intent
+# ==============================================================================
+# Purpose: Define the complete research-backed scope for EIF v2. Each feature
+#          closes a gap identified in the v1 → research cross-check (May 2026).
+#
+# Why these were out of scope in v1:
+#   V1 established the structural pipeline (DECLARE → RECORD) and proved each
+#   phase concept. It intentionally deferred features requiring:
+#     (a) A ground-truth feedback loop (ECE, conformal) - v1 has no observed outcomes
+#     (b) External LLM infrastructure changes (DASES separate weights)
+#     (c) Multi-pass iterative loops (IRIS, PIEVO principle revision)
+#     (d) Standards still in consultation (ISC - finalizing 2026-2027)
+#     (e) Architectural dependencies not yet present (Research Object packaging)
+#   V2 assumes v1 is deployed and generating real session outcomes, which
+#   unlocks (a) and provides the empirical basis for (e).
+#
+# Research sources:
+#   eif/research/ai_agents/calibration.md
+#   eif/research/ai_agents/causal_reasoning.md
+#   eif/research/ai_agents/multi_agent_review.md
+#   eif/research/ai_agents/provenance.md
+#   eif/research/foundations/frontier_debates.md
+#   eif/research/foundations/statistics.md
+#   eif/research/sycophancy_bias_research.md
+# ==============================================================================
+
+id: eif-v2-scope
+version: "2.0"
+created: "2026-05-14"
+status: implemented  # All F1-F13 features implemented as of 2026-05-15; intent was drafted same day as implementation
+extends: eif-engine-v1
+
+# ─────────────────────────────────────────────────────────────────────────────
+# V2 FEATURES - 13 gaps closed from v1 cross-check
+# ─────────────────────────────────────────────────────────────────────────────
+
+features:
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # F1: Label-Grounded ECE (CALIBRATE phase)
+  # ════════════════════════════════════════════════════════════════════════════
+
+  - id: F1
+    name: "Label-grounded Expected Calibration Error"
+    phase: CALIBRATE
+    module: "eif/eif/calibrate/"
+    replaces: "Confidence-tier proxy ECE in ece.py + conformal.py"
+
+    problem: >
+      V1 ECE uses confidence_tier (HIGH/MEDIUM/LOW) as a proxy for observed
+      outcomes because v1 has no feedback loop. HALoGEN (arXiv:2501.08292,
+      ACL 2025 Outstanding Paper) found up to 86% of atomic facts hallucinated
+      in domain-specific LLM generations across 150,000 test cases - meaning
+      high confidence does NOT reliably correlate with accuracy without external
+      label evidence. V1's proxy ECE structurally mirrors the formula but is
+      not mathematically equivalent and overstates calibration quality.
+
+    solution: >
+      V2 design: each ProvenanceRecord gains an `outcome_observed: bool | None` field.
+      V3 SUPERSEDES this with a cross-session outcome_store approach:
+        - eif_record_outcome(session_id, provenance_record_id, outcome, domain) persists
+          OutcomeRecord entries to ~/.eif/outcome_store.json (append-only, cross-session).
+        - eif_calibrate reads session outcomes from outcome_store (filtered by session_id)
+          and passes them to compute_ece() as the outcome_history parameter.
+        - ECE.label_grounded activates at >= 30 labeled outcome records in the store
+          (ECE_GROUNDED_MIN = 30; see eif_v3_intent F11, eif_calibration_report tool).
+      ProvenanceRecord.outcome_observed / outcome_recorded_at remain as V2 schema-compat fields
+      only. They are NOT written by eif_record_outcome; outcome_store is the canonical path.
+      New integrations must use eif_record_outcome (V3). The V2 field path is deprecated.
+
+    research:
+      - paper: "HALoGEN - arXiv:2501.08292 (ACL 2025 Outstanding Paper)"
+        finding: "Up to 86% hallucination rate; high confidence ≠ accuracy without label evidence"
+      - paper: "Generation vs verification asymmetry - arXiv:2602.07594 (2026)"
+        finding: "LLMs systematically weaker at verifying than generating; joint RL training closes gap by ~20%"
+      - paper: "Physics-Informed Metacognition - OpenReview LF4RSTZUtA (2025)"
+        finding: "Embedding domain physical constraints in metacognition yields 37.2% ECE reduction"
+      - paper: "Conformal prediction - Angelopoulos & Bates arXiv:2107.07511"
+        finding: "P(y_true ∈ C(x)) ≥ 1 − α; distribution-free coverage guarantee"
+      - paper: "Black-box agent conformal - arXiv:2602.21368 (2026)"
+        finding: "Self-consistency sampling + conformal calibration for AI agents"
+
+    schema_additions:
+      - "ProvenanceRecord.outcome_observed: bool | None (None = not yet known)"
+      - "ProvenanceRecord.outcome_recorded_at: datetime | None"
+      - "ECEResult.label_grounded: bool (True = real labels; False = tier proxy)"
+      - "ECEResult.calibration_warning: str | None"
+
+    constraints:
+      - id: F1C1
+        description: >
+          When outcome records are available for >= 30 entries in the outcome_store
+          (V3 path) or >= 30 outcome_observed entries in the session history (V2
+          fallback), compute_ece() must use real labels.
+          ECEResult.label_grounded must be True.
+        implementation_path: >
+          V3 (preferred): eif_record_outcome writes OutcomeRecord to outcome_store;
+          eif_calibrate loads session outcomes from store and passes to compute_ece().
+          V2 (fallback): ProvenanceRecord.outcome_observed field.
+        test: >
+          Seed outcome_store with 35 OutcomeRecords for a session. Call eif_calibrate
+          for that session. Assert response["ece_label_grounded"] == True and
+          calibration_warning is absent or None.
+
+      - id: F1C2
+        description: >
+          When labeled outcome records < 30, emit a calibration_warning in eif_calibrate
+          response: contains "UNCALIBRATED" or equivalent. ECEResult.label_grounded=False.
+        test: >
+          Seed outcome_store with 10 records only. Call eif_calibrate.
+          Assert response["ece_label_grounded"] == False and
+          response["calibration_warning"] is not None and contains "UNCALIBRATED".
+
+      - id: F1C3
+        description: >
+          Physics-Informed Metacognition: for claims in constrained domains
+          (healthcare, engineering), posterior updates must be bounded by known
+          physical or regulatory limits. A healthcare claim cannot have
+          posterior > 0.95 unless a meta-analysis or RCT SUPPORTS it.
+          Rationale: domain constraints reduce ECE by 37.2% (OpenReview LF4RSTZUtA).
+        test: >
+          Set domain="healthcare", posterior=0.97, evidence_tier="P4_PARAMETRIC".
+          Assert posterior is clamped to ≤ 0.95 and a domain_clamp_applied flag
+          is set in CalibrationResult.
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # F2: IRIS Full Iterative Causal Discovery Pipeline (CAUSAL_GATE phase)
+  # ════════════════════════════════════════════════════════════════════════════
+
+  - id: F2
+    name: "IRIS full iterative causal discovery"
+    phase: CAUSAL_GATE
+    module: "eif/eif/causal_gate/iris_pipeline.py"
+    replaces: "discover_confounders() single-pass web query in confound.py"
+
+    problem: >
+      V1 IRIS implementation runs a single web query + LLM JSON extraction.
+      The actual IRIS pipeline (arXiv:2510.09217, ACL 2025) is a 6-step
+      iterative process. The single-pass v1 approach misses multi-hop
+      confounder chains and does not expand the causal graph.
+
+    solution: >
+      Implement the full 6-step IRIS loop as iris_pipeline.py:
+        Step 1: Document collection - automated retrieval of literature for
+                (cause, effect, domain) using native_search with 3-5 queries.
+        Step 2: Statistical causal discovery - extract quantitative claims
+                from retrieved documents; run correlation/precedence checks.
+        Step 3: LLM causal analysis - classify each extracted claim on the
+                Pearl causal ladder (ASSOCIATION / INTERVENTION / COUNTERFACTUAL).
+        Step 4: Missing variable identification - ask LLM: "what variables
+                might confound (cause)→(effect) that are not in the literature?"
+        Step 5: Causal graph expansion - add identified missing variables;
+                re-query for each new variable's literature.
+        Step 6: Verifiable output - CausalGraph with confidence scores per edge.
+      Maximum 2 iterations of steps 4-6 (budget control).
+
+    research:
+      - paper: "IRIS - arXiv:2510.09217 (ACL 2025)"
+        finding: "6-step iterative framework for verifiable causal discovery in non-tabular data"
+        algorithm: "Statistical extraction → LLM ladder classification → missing-variable → graph expansion"
+
+    schema_additions:
+      - "CausalGraph: edges List[CausalEdge], iterations_run int, confidence_scores dict[str, float]"
+      - "CausalEdge: cause str, effect str, level PearlLevel, evidence_count int, confidence float"
+
+    constraints:
+      - id: F2C1
+        description: >
+          iris_pipeline.run() must execute all 6 steps and return a CausalGraph
+          with at least one edge per variable pair analyzed.
+        test: >
+          Call iris_pipeline.run(cause="statins", effect="mortality", domain="healthcare").
+          Assert result is CausalGraph with len(edges) >= 1 and
+          result.iterations_run >= 1.
+
+      - id: F2C2
+        description: >
+          Step 4 (missing variable identification) must add at least one
+          candidate confounder not present in the initial document set when
+          run on a known multi-confounder domain (e.g., healthcare outcomes).
+        test: >
+          Run IRIS on "exercise → cardiovascular_mortality". Assert
+          result.missing_variables contains at least one entry (e.g. "diet",
+          "smoking", "age") that is not in the original cause/effect pair.
+
+      - id: F2C3
+        description: >
+          Maximum 2 graph expansion iterations. If iteration 2 adds no new
+          variables, stop early. Never exceed 2 iterations regardless of results.
+        test: >
+          Assert result.iterations_run <= 2 for any input.
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # F3: PIEVO Principle-Level Auto-Revision (UPDATE + PROGRAMME phases)
+  # ════════════════════════════════════════════════════════════════════════════
+
+  - id: F3
+    name: "PIEVO principle-level auto-revision"
+    phase: PROGRAMME
+    module: "eif/eif/programme/principle_revision.py"
+    extends: "eif/eif/update/paradigm.py (alert-only → revision)"
+
+    problem: >
+      V1 PIEVO detects systematic posterior drift (≥ 3 consecutive same-direction
+      updates, mean shift ≥ 0.04) and surfaces a ParadigmRevisionAlert. It does
+      not act on the alert. PIEVO (arXiv:2602.06448) specifically enables
+      principle-level revision: when experimental results contradict current
+      theoretical principles, the framework triggers anomaly-driven augmentation
+      and refines the theoretical worldview at the principle level - not just
+      updates one hypothesis.
+
+    solution: >
+      Add principle_revision.py with propose_principle_revision():
+        - Input: ParadigmRevisionAlert + current session claims
+        - Output: PrincipleRevisionProposal (not auto-applied; requires
+          human confirmation) containing:
+            * affected_principle: which high-level assumption drove the drift
+            * revision_direction: what should change
+            * supporting_evidence: claims whose updates triggered the drift
+            * confidence: how certain the revision proposal is
+            * alternative_hypotheses: 2 alternative explanations for the drift
+      The revision is PROPOSED not APPLIED. Human must confirm via eif_approve_revision
+      before it modifies the session's prior framework. This preserves falsibilism:
+      principle revision is a hypothesis, not a fact.
+
+    research:
+      - paper: "PIEVO - arXiv:2602.06448 (2026)"
+        finding: "Bayesian optimization over evolving principle space; anomaly-driven augmentation; principle revision when experiments contradict principles"
+        algorithm: "Normal operation = within-framework search; anomaly trigger = principle revision cycle"
+
+    schema_additions:
+      - "PrincipleRevisionProposal: affected_principle str, revision_direction str, supporting_evidence list[str], confidence float, alternative_hypotheses list[str], requires_confirmation bool = True"
+
+    constraints:
+      - id: F3C1
+        description: >
+          propose_principle_revision() must return a PrincipleRevisionProposal
+          with at least 2 alternative_hypotheses (Deutsch anti-dogmatism:
+          never commit to a single revision without considering alternatives).
+        test: >
+          Call propose_principle_revision(alert=paradigm_down_alert, claims=[...]).
+          Assert len(proposal.alternative_hypotheses) >= 2.
+
+      - id: F3C2
+        description: >
+          requires_confirmation must always be True. The framework must never
+          auto-apply a principle revision without explicit human approval.
+          Rationale: principle revision in Kuhn terms is a paradigm shift - 
+          not a routine Bayesian update.
+        implementation_status: ADVISORY_ONLY
+        advisory_note: >
+          eif_approve_revision MCP tool is NOT YET IMPLEMENTED (deferred post-launch).
+          Proposals are currently advisory-only: they are returned by eif_programme_health
+          and can be read by callers, but there is no mechanism to apply them.
+          The constraint requires_confirmation=True IS satisfied (proposals are never
+          auto-applied because the application tool does not exist).
+          When eif_approve_revision is implemented it must: accept session_id + proposal_id,
+          write the approved revision to session state, and return confirmation.
+        test: >
+          Assert proposal.requires_confirmation == True for any input.
+          Verify no session prior is modified (currently always true - no apply path exists).
+
+      - id: F3C3
+        description: >
+          confidence field must be ≤ 0.80. A principle revision proposal with
+          confidence > 0.80 is epistemically overconfident (Deutsch fallibilism).
+        test: >
+          Assert proposal.confidence <= 0.80 for any output.
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # F4: Research Object Packaging (RECORD phase)
+  # ════════════════════════════════════════════════════════════════════════════
+
+  - id: F4
+    name: "Research Object packaging + DeepTRACE 8-dimension audit"
+    phase: RECORD
+    module: "eif/eif/record/research_object.py"
+    extends: "eif/eif/schemas.py ProvenanceRecord"
+
+    problem: >
+      V1 ProvenanceRecord hashes decision + claims (input_fingerprint). This
+      captures 2 of DeepTRACE's 8 audit dimensions. The Research Object paradigm
+      (arXiv:2604.11261) requires structured { inputs, process, outputs, provenance }
+      with full parameter logging. DeepTRACE (arXiv:2509.04499) found 40–80%
+      citation accuracy in AI research systems - the primary failure mode is
+      untracked intermediate steps, not the final answer.
+
+    solution: >
+      Add ResearchObject schema and build_research_object() in record/research_object.py.
+      Populate all 8 DeepTRACE dimensions per session:
+        1. answer_accuracy:        final verdict (PASS/HALT) + confidence
+        2. source_accuracy:        evidence_source URLs exist? (checked with HEAD request)
+        3. citation_accuracy:      source contains the claimed fact? (re-checked from ProvenanceRecord)
+        4. claim_evidence_alignment: each claim's evidence_trail matches its verdict
+        5. reasoning_transparency: retrieval_trace[] completeness (all steps logged?)
+        6. uncertainty_disclosure: claims with posterior in [0.20, 0.70] flagged as uncertain
+        7. coverage_completeness:  CONTRADICTING evidence explicitly included in audit?
+        8. temporal_currency:      evidence_source dates vs decision date (stale > 6 months)
+
+    research:
+      - paper: "Research Object - arXiv:2604.11261 (2026)"
+        finding: "Structured AI governance via { inputs, process, outputs, provenance } including model config, prompts+hashes, parameters, interaction logs, human vs AI decisions"
+      - paper: "DeepTRACE - arXiv:2509.04499 (2025)"
+        finding: "8-dimension audit framework; citation accuracy 40–80%; untracked intermediate steps are primary failure mode"
+
+    schema_additions:
+      - "ResearchObject: session_id str, dimensions DeepTRACEAudit, inputs ResearchObjectInputs, process ResearchObjectProcess, outputs ResearchObjectOutputs, created_at datetime"
+      - "DeepTRACEAudit: answer_accuracy float, source_accuracy float, citation_accuracy float, claim_evidence_alignment float, reasoning_transparency float, uncertainty_disclosure float, coverage_completeness float, temporal_currency float, overall_score float"
+
+    constraints:
+      - id: F4C1
+        description: >
+          build_research_object() must populate all 8 DeepTRACE dimensions.
+          overall_score = mean of 8 dimension scores. Any dimension below 0.5
+          must generate a provenance_flag in the ResearchObject.
+        test: >
+          Build a ResearchObject from a complete session. Assert all 8 dimension
+          fields are populated (not None). Assert overall_score == mean(all 8).
+          Assert len(provenance_flags) >= count(dimensions below 0.5).
+
+      - id: F4C2
+        description: >
+          Dimension 8 (temporal_currency): any evidence_source with a date
+          older than 180 days relative to the decision date must be flagged
+          as STALE in the ResearchObject, not just in stale_evidence_warnings.
+        test: >
+          Build session with evidence dated 200 days before decision_date.
+          Assert ResearchObject.dimensions.temporal_currency < 1.0 and
+          a STALE_EVIDENCE entry appears in provenance_flags.
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # F5: ISC Global Reporting Standard - AI Disclosure Taxonomy (RECORD phase)
+  # ════════════════════════════════════════════════════════════════════════════
+
+  - id: F5
+    name: "ISC AI disclosure taxonomy integration"
+    phase: RECORD
+    module: "eif/eif/record/isc_disclosure.py"
+    note: "ISC standard finalizing late 2026-2027; implement as draft; update on release"
+
+    problem: >
+      EIF's RECORD phase produces a ProvenanceRecord but does not classify
+      how AI was used in each step according to an external standard. The
+      International Science Council (https://council.science/our-work/ai-disclosure-in-research/)
+      is building a global AI disclosure taxonomy (analogous to CRediT for author roles)
+      covering: data collection, analysis, hypothesis generation, writing, and peer review
+      as distinct AI use types, each with required granularity (model X, task Y, step Z,
+      human review at step Z). Agents using EIF should be able to auto-generate
+      ISC-compliant disclosure from the session record.
+
+    solution: >
+      Add ISCDisclosure model + generate_isc_disclosure(session) in record/isc_disclosure.py.
+      Maps EIF pipeline phases to ISC taxonomy entries:
+        DECLARE + FALSIFY → "hypothesis_generation" (model=LLM, task=claim extraction)
+        FALSIFY (P1–P3)   → "data_collection" and "analysis" (model=native_search, task=evidence)
+        CALIBRATE         → "analysis" (model=Bayesian engine, task=posterior)
+        CHALLENGE         → "peer_review" (model=critic_model, task=adversarial review)
+        RECORD            → "documentation" (model=EIF, task=provenance chain)
+        Human decisions   → "human_review" at APPROVE/HALT points
+
+    research:
+      - paper: "ISC Global Reporting Standard for AI in Research (2026)"
+        source: "https://council.science/our-work/ai-disclosure-in-research/"
+        finding: "Structured taxonomy of AI use types; granularity (model, task, step, human review); analogy to CRediT; consultation through 2026"
+
+    constraints:
+      - id: F5C1
+        description: >
+          generate_isc_disclosure() must return at least one entry per EIF
+          pipeline phase that ran (DECLARE → RECORD), each with model_name and
+          task_description populated. human_review_step is populated where a human
+          review action is meaningful (CHALLENGE, HALT_DECISION); it is null for
+          fully automated phases (DECLARE, CALIBRATE, etc.) - null marks the
+          phase as fully automated in the disclosure.
+        test: >
+          Build a ProvenanceRecord and call generate_isc_disclosure(record,
+          phases_run=["DECLARE", "FALSIFY", "CALIBRATE", "CHALLENGE", "RECORD"]).
+          Assert len(entries) >= 5.
+          Assert each entry has model_name and task_description (not None).
+          Assert CHALLENGE entry has human_review_step != None.
+          Note: do not use eif_verify as the source of phases_run - eif_verify is a
+          façade and does not call every granular tool; supply phases_run explicitly.
+
+      - id: F5C2
+        description: >
+          Any HALT verdict must include a disclosure entry with
+          isc_type="human_required" indicating the decision requires human review
+          before acting. This satisfies the ISC requirement for documenting
+          human vs. AI decision points.
+        test: >
+          Session with HALT verdict: assert disclosure contains at least one
+          entry with isc_type == "human_required" and human_review_step != None.
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # F6: MONICA Cosine Drift Formula (SYCOPHANCY_GATE - S2 replacement)
+  # ════════════════════════════════════════════════════════════════════════════
+
+  - id: F6
+    name: "MONICA exact cosine drift formula"
+    phase: SYCOPHANCY_GATE
+    module: "eif/eif/sycophancy/drift.py"
+    replaces: "Heuristic direction_delta × (1 − evidence_delta) in drift.py"
+
+    problem: >
+      V1 drift_score uses a heuristic: direction_delta/2 × (1 − evidence_delta).
+      MONICA (arXiv:2510.16727) specifies an exact formula:
+        drift_score(t) = cos_sim(reasoning_state_t, user_hypothesis)
+                       − cos_sim(reasoning_state_t, evidence_state)
+      The heuristic approximates this directionally but cannot detect subtle
+      reasoning shifts that move toward user framing while remaining
+      nominally evidence-adjacent.
+
+    solution: >
+      Replace the heuristic with the MONICA formula using sentence-transformers
+      (all-MiniLM-L6-v2 as default encoder). The three inputs to embed are:
+        reasoning_state_t: the agent's response text at turn t
+        user_hypothesis:   the user's stated desired conclusion (extracted from user_message)
+        evidence_state:    concatenation of all FALSIFY probe summaries for the session
+      Keep existing thresholds: drift_score > 0.40 → warn; > 0.60 → force HALT.
+      Soft dependency: if sentence-transformers is not installed, fall back to
+      v1 heuristic with a DEGRADED_METRIC flag in the result.
+
+    research:
+      - paper: "MONICA - arXiv:2510.16727 (2025)"
+        formula: "drift_score(t) = cos_sim(reasoning_state_t, user_hypothesis) − cos_sim(reasoning_state_t, evidence_state)"
+        finding: "Positive score = reasoning moving toward user position; negative = moving toward evidence"
+
+    constraints:
+      - id: F6C1
+        description: >
+          When sentence-transformers is available, compute_drift_score() must use
+          the MONICA formula exactly. Result must be in [-1, 1] (cosine difference).
+        test: >
+          Encode reasoning="the user is right", user_hypothesis="the user is right",
+          evidence_state="contradicting evidence found".
+          Assert compute_drift_score() > 0.40 (reasoning aligned with user, not evidence).
+
+      - id: F6C2
+        description: >
+          When sentence-transformers is not installed, fall back to v1 heuristic
+          and set drift_result.metric_quality = "DEGRADED_METRIC". Never raise.
+        test: >
+          Mock sentence_transformers import to raise ImportError.
+          Call compute_drift_score(). Assert metric_quality == "DEGRADED_METRIC"
+          and result is a float (heuristic ran).
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # F7: ELEPHANT S4 - Exact Marker Count (SYCOPHANCY_GATE - S4 replacement)
+  # ════════════════════════════════════════════════════════════════════════════
+
+  - id: F7
+    name: "ELEPHANT S4 exact marker count (≥ 3 threshold)"
+    phase: SYCOPHANCY_GATE
+    module: "eif/eif/sycophancy/framing.py"
+    replaces: "Composite framing_score / 1000 words in framing.py"
+
+    problem: >
+      V1 FRAMING uses a composite score (hedge_count + softener×2 + validator)
+      per 1000 words vs threshold 15.0. ELEPHANT (arXiv:2505.13995) found that
+      47% of LLM responses preserve face more than humans, and 42% affirm
+      inappropriate behavior - establishing that face-preserving behavior is
+      a distinct, common signal. The EIF measurement framework for S4 specifies
+      "≥ 3 face-preserving markers in a HALT-routed turn = FRAMING_SOFTENING."
+      The current composite score masks this interpretable threshold.
+
+    solution: >
+      Add raw_marker_count to FramingResult alongside framing_score.
+      FRAMING_SOFTENING fires when raw_marker_count >= 3 (primary) OR
+      framing_score > 15.0 (secondary, retained for composite cases).
+      raw_marker_count = count of distinct face-preserving PATTERN TYPES present
+      (not token count). Max value = 3: one point for any hedge(s), one for any
+      softener(s), one for any validator(s). Repeating the same type does not add.
+
+    research:
+      - paper: "ELEPHANT - arXiv:2505.13995 (2025)"
+        finding: "47% of LLMs preserve face more than humans; 42% affirm inappropriate behavior; face-preserving as distinct sycophancy signal"
+
+    constraints:
+      - id: F7C1
+        description: >
+          detect_framing() must return FramingResult with raw_marker_count field.
+          FRAMING_SOFTENING fires when raw_marker_count >= 3 (all three marker types
+          present) OR framing_score > 15.0 (strict greater-than; exactly 15.0 does NOT flag).
+          raw_marker_count counts TYPES, not tokens: a response with 5 hedges but no
+          softeners and no validators has raw_marker_count=1, not 5.
+        test: >
+          Craft a HALT-turn response with one hedge ("might"), one softener ("just a thought"),
+          and one validator ("great question"). This activates all three pattern types.
+          Assert raw_marker_count == 3 and framing_flagged == True.
+          Separately, craft a response with 3 hedges and no softeners or validators.
+          Assert raw_marker_count == 1 (type count, not token count) and framing_flagged depends
+          only on framing_score > 15.0.
+
+      - id: F7C2
+        description: >
+          A response with only 2 of the 3 marker types must NOT flag FRAMING_SOFTENING
+          from the raw_marker_count path (even if composite score is borderline).
+        test: >
+          Response with one hedge type and one softener type (no validators), framing_score = 12.0.
+          Assert raw_marker_count == 2 and framing_flagged == False.
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # F8: DASES Adversarial Replicator Agent (CHALLENGE phase)
+  # ════════════════════════════════════════════════════════════════════════════
+
+  - id: F8
+    name: "DASES adversarial replicator agent"
+    phase: CHALLENGE
+    module: "eif/eif/challenge/replicator.py"
+    note: >
+      Requires separate model API call with adversarial system prompt.
+      Not the same as the existing multi_critic (which uses same or diverse
+      prompt with the generator's model). DASES uses a structurally different
+      objective: maximize finding flaws, not evaluate.
+
+    problem: >
+      V1 CHALLENGE uses a multi-critic (adversarial LLM call) or protocol-only
+      fallback. Neither constitutes a true replicator: they re-evaluate the
+      SAME evidence, not independently re-execute the derivation from scratch.
+      DASES (arXiv:2603.29045) specifies that an adversarial falsifier must:
+        - Design targeted, non-obvious falsification tests
+        - Adaptively evolve its strategy based on what the artifact "defends"
+        - Have a structural incentive to find flaws (separate weights/loss)
+        - Accept the artifact only if it SURVIVES adversarial falsification
+      Current multi-agent systems have no dedicated replication agent.
+
+    solution: >
+      Add replicator.py with run_adversarial_replication():
+        - Receives: claim_text, supporting_evidence, session_decision
+        - Calls LLM with an adversarial system prompt: "Your ONLY goal is to find
+          a way this claim fails. Design a specific test that the claim must survive.
+          Be non-obvious: do not test the claim directly. Find an indirect path
+          to failure. If the claim survives your test, state that explicitly."
+        - Extracts: falsification_test_designed, test_result, survived bool
+        - Returns: ReplicationResult(survived, test_designed, test_result, confidence)
+      Integrate into eif_challenge as an optional replication_mode="DASES" parameter.
+
+    research:
+      - paper: "DASES (Abyss Falsifier) - arXiv:2603.29045 (2026)"
+        finding: "Adaptive falsification: targeted non-obvious tests; evolves strategy based on defenses; requires separate model incentive to find flaws"
+
+    constraints:
+      - id: F8C1
+        description: >
+          The adversarial system prompt must not ask the LLM to "evaluate" or
+          "assess" the claim - only to "find a way it fails." The word
+          "evaluate" must not appear in the system prompt.
+        test: >
+          Extract the system prompt from run_adversarial_replication(). Assert
+          "evaluate" not in system_prompt and "fail" or "falsif" in system_prompt.
+
+      - id: F8C2
+        description: >
+          ReplicationResult.test_designed must be non-empty and must not be a
+          verbatim restatement of the claim. Length must be >= 50 characters.
+        test: >
+          Call run_adversarial_replication(claim="A causes B"). Assert
+          result.test_designed != "A causes B" and len(result.test_designed) >= 50.
+
+      - id: F8C3
+        description: >
+          When replication_mode="DASES" is passed to eif_challenge, the MCP
+          tool must call run_adversarial_replication() and include
+          replication_result in the response dict.
+        test: >
+          Call eif_challenge with replication_mode="DASES". Assert
+          "replication_result" in response and response["replication_result"]
+          is not None.
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # F9: Exploratory / Confirmatory Separation (DECLARE phase)
+  # ════════════════════════════════════════════════════════════════════════════
+
+  - id: F9
+    name: "Exploratory vs confirmatory claim labeling"
+    phase: DECLARE
+    module: "eif/eif/declare/"
+    note: >
+      Based on Lakens 2021 and frontier_debates.md: exploratory claims generate
+      hypotheses; confirmatory claims test pre-registered hypotheses. Inferential
+      claims (HALT/ACT routing) should only be made on confirmatory claims.
+
+    problem: >
+      V1 treats all claims equivalently regardless of whether they are
+      exploratory (generated from data observation) or confirmatory (testing a
+      pre-registered hypothesis). Frontier_debates.md (citing Lakens 2021,
+      Perspectives on Psychological Science 16(3), 639-648) establishes that
+      inferential conclusions from exploratory analysis contaminate confirmatory
+      inference - a critical validity threat in AI agent decision loops where the
+      agent both generates and tests hypotheses in the same session.
+
+    solution: >
+      Add claim_mode: Literal["EXPLORATORY", "CONFIRMATORY", "UNSPECIFIED"] to
+      ClaimInput and Claim. Default: "UNSPECIFIED".
+      EXPLORATORY claims: HALT routing is advisory (warn: "this claim was
+      generated exploratorily; confirmatory replication required before acting").
+      CONFIRMATORY claims: full HALT routing applies; inferential conclusions valid.
+      UNSPECIFIED claims: treated as CONFIRMATORY (conservative default).
+      eif_declare returns exploration_warning when a session contains ONLY
+      exploratory claims with HALT routing.
+
+    research:
+      - paper: "Lakens (2021) - Perspectives on Psychological Science 16(3), 639-648"
+        finding: "Inferential claims from exploratory analysis contaminate confirmatory inference; explicit labeling required"
+      - paper: "frontier_debates.md - Nature Human Behaviour format cited"
+        finding: "Middle ground: explicit exploratory/confirmatory labeling with inferential claims restricted to confirmatory part"
+
+    constraints:
+      - id: F9C1
+        description: >
+          When a session contains ONLY EXPLORATORY claims, eif_declare must add an
+          exploration_warning to the response. The warning is prefixed "EXPLORATION_ONLY:"
+          to allow callers to detect and strip it programmatically.
+          Implemented text: "EXPLORATION_ONLY: All claims are EXPLORATORY. HALT verdicts
+          are advisory - confirmatory replication is required before acting on these findings."
+        test: >
+          Declare 3 EXPLORATORY claims, all with HALT verdicts.
+          Assert response["exploration_warning"] is not None.
+
+      - id: F9C2
+        description: >
+          CONFIRMATORY claims must have a falsification_condition registered
+          BEFORE any evidence is collected (pre-registration analogy).
+          If falsification_condition is absent on a CONFIRMATORY claim, flag
+          it as a HARKING risk regardless of timestamps.
+        test: >
+          Declare CONFIRMATORY claim without falsification_condition.
+          Assert harking_flag == True on that claim.
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # F10: FDR Correction for Hypothesis Search (HYPOTHESIS_AGENDA phase)
+  # ════════════════════════════════════════════════════════════════════════════
+
+  - id: F10
+    name: "Multiple comparisons FDR correction for hypothesis search"
+    phase: HYPOTHESIS_AGENDA
+    module: "eif/eif/hypothesis_agenda/fdr.py"
+
+    problem: >
+      V1 HYPOTHESIS_AGENDA ranks claims by EIG priority but does not correct for
+      the multiple-comparisons problem introduced by searching across N claims.
+      frontier_debates.md (§6) establishes: "20 tests at α=0.05 → ~1 false
+      positive expected; standard Bonferroni/FDR corrections assume a fixed
+      known test set and don't straightforwardly apply when tests are
+      search-generated." With N ASSUMED/GUESSED claims, EIF is implicitly
+      running N hypothesis tests - the overall false-positive rate is inflated.
+
+    solution: >
+      Add fdr.py with apply_fdr_correction(agenda, alpha=0.05):
+        - Compute adjusted significance threshold for each agenda item using
+          Benjamini-Hochberg (FDR): α_adjusted(k) = k/N × α, sorted by
+          posterior proximity to decision thresholds.
+        - Annotate each HypothesisAgendaItem with fdr_adjusted_threshold
+          and fdr_inflation_risk (HIGH if N > 10, MEDIUM if N > 5, LOW if N ≤ 5).
+        - HypothesisAgenda gains fdr_warning when inflation risk is HIGH:
+          "N={N} claims tested: false discovery rate elevated. Prioritize
+          top-2 claims only; treat remaining verdicts as exploratory."
+      Integrate into eif_hypothesis_agenda tool: always run FDR correction.
+
+    research:
+      - paper: "frontier_debates.md §6 - citing Benjamini & Hochberg (1995)"
+        finding: "Standard corrections don't apply to search-generated tests; explicit multiplicity acknowledgment required"
+      - paper: "statistics.md - FDR table entry"
+        finding: "FDR = expected proportion of false positives; context-dependent; use when test set is large"
+
+    constraints:
+      - id: F10C1
+        description: >
+          When agenda.total_claims > 10, fdr_warning must be present in the
+          HypothesisAgenda response from eif_hypothesis_agenda.
+        test: >
+          Build agenda with 12 claims. Assert agenda.fdr_warning is not None
+          and contains "false discovery" or "FDR".
+
+      - id: F10C2
+        description: >
+          apply_fdr_correction() must not change priority ranking - only annotate.
+          items[0] must remain the same claim before and after FDR correction.
+        test: >
+          Run build_agenda() then apply_fdr_correction(). Assert
+          agenda.items[0].claim_text is unchanged.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OPEN ITEMS (require external resolution before V2 is complete)
+# ─────────────────────────────────────────────────────────────────────────────
+
+open_items:
+  - id: OI1
+    item: "CONSENSAGENT 92/64/78/8% statistics in eif_multi_critic_intent"
+    status: RESOLVED_2026-05-14
+    resolution: >
+      Specific percentages (92/64/78/8%) removed from eif_multi_critic_intent.yaml.
+      All three instances replaced with qualified language: finding preserved as
+      "same-model critics show markedly higher agreement rates than cross-family
+      critics; precise percentages to be confirmed from paper."
+      If the ACL Findings paper is later obtained, add research/ai_agents/consensagent_acl2025.md
+      and restore specific percentages with citation.
+    action: >
+      DONE. No further action needed unless the paper is sourced.
+
+  - id: OI2
+    item: "Physics-Informed Metacognition domain constraint values"
+    status: RESOLVED_2026-05-14
+    resolution: >
+      calibrate/domain_constraints.py created with DomainConstraintEntry
+      dataclass, DOMAIN_CONSTRAINT_TABLE dict, and get_domain_ceiling() accessor.
+      Five domains covered: healthcare/medical (0.95, FDA SaMD Action Plan 2021),
+      engineering (0.92, ISO 26262-1:2018 ASIL D + IEC 61508 SIL 4),
+      aviation (0.90, RTCA DO-178C Level A), nuclear (0.90, IEC 61513 Cat A).
+      ece.py updated to import DOMAIN_POSTERIOR_CEILINGS from domain_constraints.py.
+      Values are documented as conservative regulatory proxies, not literal
+      quoted thresholds. The note field on each entry explains the gap.
+    action: >
+      DONE. Future v2 of the table should source literal SaMD performance
+      thresholds from FDA guidance and map them to probability bounds via
+      ROC-AUC or sensitivity/specificity - see domain_constraints.py module
+      docstring for the full methodology note.
+
+  - id: OI3
+    item: "ISC Global Reporting Standard finalization"
+    status: IN_CONSULTATION
+    action: >
+      ISC standard is in public consultation through 2026; finalized late 2026-2027.
+      F5 implementation should be marked as ISC_DRAFT_COMPLIANCE until the
+      final standard is published. Monitor: https://council.science/our-work/ai-disclosure-in-research/
+
+  - id: OI4
+    item: "sentence-transformers dependency for MONICA F6"
+    status: RESOLVED_2026-05-14
+    resolution: >
+      pyproject.toml: added 'monica' optional extra [sentence-transformers>=2.2].
+      EIF venv: eif[monica] installed (sentence-transformers 5.5.0, Python 3.11).
+      all-MiniLM-L6-v2 model cached at ~/.cache/huggingface/hub/.
+      tests/unit/test_monica_drift.py: added TestMonicaRealEncoder class (3 tests)
+      using real encoder - no mocks. All 3 pass. Total suite: 312 passed, 0 failed.
+    action: >
+      DONE. F6C1 is now tested with both mock (unit) and real encoder (integration).
+      The 'full' extra already included sentence-transformers; 'monica' is now
+      the minimal extra for MONICA-only installs.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CONSTRAINT SATISFIABILITY
+# ─────────────────────────────────────────────────────────────────────────────
+
+constraint_satisfiability:
+  conflicts_checked:
+    - "F1C3 (domain posterior ceiling) vs F6 (MONICA drift on same posteriors): compatible - F1C3 applies before SPRT; F6 reads reasoning text not posteriors"
+    - "F3C3 (revision confidence ≤ 0.80) vs F1C1 (label-grounded ECE): compatible - different modules, no shared state"
+    - "F9C2 (CONFIRMATORY harking flag without condition) vs C13 v1 (timestamp-based harking): F9C2 fires regardless of timestamp; C13 fires on timestamp only - both can fire independently, no conflict"
+    - "F10C2 (FDR does not change ranking) vs HA3 v1 (top_recommendation = items[0]): compatible - FDR only annotates, preserves order"
+  known_tensions:
+    - "F8 (DASES) requires a separate LLM call per claim → latency. Recommend making replication_mode='DASES' opt-in, not default."
+    - "F2 (IRIS full pipeline) runs 2 iterations of multi-hop web search → significant latency for complex causal claims. Add max_iris_latency_ms parameter."
+    - "F6 (sentence-transformers) adds startup latency for model load on first call. Cache encoder instance at module level."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# IMPLEMENTATION ORDER (dependency order, not priority)
+# ─────────────────────────────────────────────────────────────────────────────
+
+implementation_order:
+  phase_1_foundation:
+    - F9  # Exploratory/confirmatory - pure schema + DECLARE logic; no external deps
+    - F7  # ELEPHANT exact markers - small change to existing framing.py
+    - F10 # FDR correction - pure math; extends hypothesis_agenda
+
+  phase_2_calibration:
+    - F1  # Label-grounded ECE - requires v1 deployed and collecting outcomes (OI2 first)
+    - F6  # MONICA cosine drift - optional dep; F6C2 first (fallback), then F6C1
+
+  phase_3_causal_and_revision:
+    - F2  # IRIS full pipeline - iterative; needs native_search + LLM classifier
+    - F3  # PIEVO principle revision - extends paradigm.py; proposal-only (no auto-apply)
+
+  phase_4_provenance:
+    - F4  # Research Object + DeepTRACE - extends ProvenanceRecord; RECORD phase
+    - F5  # ISC disclosure - depends on F4 (needs full session record); OI3 caveat
+
+  phase_5_adversarial:
+    - F8  # DASES replicator - separate LLM call; new module; opt-in per call

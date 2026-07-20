@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: trustlint-eif-artifacts
+        name: TrustLint (EU AI Act) on EIF intent artifacts
+        entry: scripts/compliance/check.sh
+        language: script
+        files: '_intent\.yaml$'
+        pass_filenames: false

@@ -1,0 +1,16 @@
+.git
+.venv
+.pytest_cache
+.ruff_cache
+.trustlint-cache
+__pycache__
+*.pyc
+tests/
+docs/
+research/
+validation/
+examples/
+scripts/
+.github/
+*.md
+!README.md
