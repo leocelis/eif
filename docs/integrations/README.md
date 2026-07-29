@@ -82,8 +82,10 @@ marker, so older v1.0 installs remain valid until you refresh them.
 `eif_check_rules_installed` reads files on the machine where the MCP server
 process runs. With a local (stdio) server that is your machine, so pass
 absolute `file_paths[]` and it will find your instruction files. With the
-hosted endpoint the server cannot see your filesystem; validate locally
-instead:
+hosted endpoint the server cannot see your filesystem — it returns
+`indeterminate=true` / `reachable_filesystem=false` (not a definitive miss).
+Hosted-safe options: pass `file_content` after the agent Reads the local file,
+or validate locally:
 
 ```bash
 grep -l "<BEGIN-EIF" ~/.claude/CLAUDE.md .cursor/rules/eif.mdc .cursorrules AGENTS.md 2>/dev/null

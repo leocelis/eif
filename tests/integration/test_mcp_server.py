@@ -93,11 +93,34 @@ class TestSyncTools:
         assert isinstance(result, dict)
         assert "installed" in result
         assert "checked_files" in result
+        assert "indeterminate" in result
+        assert "reachable_filesystem" in result
 
     def test_check_rules_installed_explicit_paths(self):
         result = eif_check_rules_installed(file_paths=["/nonexistent/CLAUDE.md"])
         assert isinstance(result, dict)
         assert result["installed"] is False
+        # Unreadable paths must not be reported as a definitive "rules missing".
+        assert result["indeterminate"] is True
+        assert result["reachable_filesystem"] is False
+        assert result["note"]
+
+    def test_check_rules_installed_file_content_hit(self):
+        result = eif_check_rules_installed(
+            file_content="# <BEGIN-EIF v1.3>\nrules here\n# <END-EIF v1.3>\n",
+            file_content_label=".cursor/rules/eif.mdc",
+        )
+        assert result["installed"] is True
+        assert result["indeterminate"] is False
+        assert result["version"] == "v1.3"
+        assert result["source"] == "file_content"
+        assert result["file"] == ".cursor/rules/eif.mdc"
+
+    def test_check_rules_installed_file_content_miss(self):
+        result = eif_check_rules_installed(file_content="no marker here")
+        assert result["installed"] is False
+        assert result["indeterminate"] is False
+        assert result["source"] == "file_content"
 
     def test_extract_claims_from_decision(self):
         result = eif_extract_claims_from_decision(

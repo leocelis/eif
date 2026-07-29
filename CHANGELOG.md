@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `eif_check_rules_installed` no longer reports a definitive miss when the MCP
+  server cannot read any paths (hosted endpoint / wrong CWD). Returns
+  `indeterminate=true` and `reachable_filesystem=false` with a clear `note`.
+- Hosted-safe path: optional `file_content` (+ `file_content_label`) lets the
+  agent Read a local rules file and forward its text for marker detection.
+
+### Changed
+- `eif_explain` tool description now documents required detail keys
+  (`detail_text`, `prediction_impact`).
+
 ## [4.1.0] - 2026-07-19
 
 ### Added

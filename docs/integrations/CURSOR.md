@@ -154,9 +154,21 @@ Legacy alternative: append the same block (without the `---` frontmatter) to
 eif_check_rules_installed(file_paths=["/Users/you/workspace/.cursor/rules/eif.mdc"])
 ```
 
+With the hosted endpoint, have the agent Read the file and pass its text:
+
+```
+eif_check_rules_installed(
+  file_content="<contents of .cursor/rules/eif.mdc>",
+  file_content_label=".cursor/rules/eif.mdc",
+)
+```
+
 > `eif_check_rules_installed` reads files on the machine where the MCP server
-> runs. This works with local (stdio) servers. With the hosted endpoint,
-> validate locally instead: `grep "<BEGIN-EIF" .cursor/rules/eif.mdc`.
+> runs. This works with local (stdio) servers. With the hosted endpoint, the
+> server cannot see your disk — it returns `indeterminate=true` /
+> `reachable_filesystem=false` (not a definitive miss). Two hosted-safe options:
+> 1. Have the agent Read the local file and pass it as `file_content`, or
+> 2. Validate locally: `grep "<BEGIN-EIF" .cursor/rules/eif.mdc`.
 
 ---
 
@@ -166,6 +178,6 @@ eif_check_rules_installed(file_paths=["/Users/you/workspace/.cursor/rules/eif.md
 |---|---|---|
 | Tools don't appear | MCP panel not reloaded after config edit | Toggle the MCP feature off and on, or restart Cursor |
 | Agent never calls `eif_verify` | Rule not installed or `alwaysApply` missing | Create `.cursor/rules/eif.mdc` from section 2 with `alwaysApply: true` |
-| `eif_check_rules_installed` returns `installed: false` for a file you know exists | Hosted server cannot read your filesystem, or relative paths resolved against the server CWD | Use a local (stdio) server for this check, pass absolute paths, or validate with `grep` |
+| `eif_check_rules_installed` returns `installed: false` for a file you know exists | Hosted server cannot read your filesystem (`indeterminate=true`), or relative paths resolved against the server CWD | Pass `file_content` after reading the local file, use a local (stdio) server, or `grep "<BEGIN-EIF" .cursor/rules/eif.mdc` |
 | Hosted endpoint returns auth errors | Missing or wrong Bearer key | Re-check the `Authorization` header; request a key via GitHub Discussions |
 | `uvx eif-engine` fails | Package name is not the executable name | Use `uvx --from eif-engine eif-mcp-server` |

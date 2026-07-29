@@ -1038,8 +1038,9 @@ async def eif_update(
         "Call after eif_update when the posterior is stable and you need a documented explanation artifact. "
         "Use eif_verify instead if you want the full pipeline in one call. "
         "Parameters: session_id, prior_explanation (previous explanation text), "
-        "new_explanation (updated mechanism), details[] (list of sub-claim dicts - each must be "
-        "specific and independently checkable; vague details fail), "
+        "new_explanation (updated mechanism), details[] (list of sub-claim dicts - each REQUIRES "
+        "detail_text (str) and prediction_impact (str); each must be specific and independently "
+        "checkable; vague details fail), "
         "testable_predictions[] (list of prediction strings derivable from the explanation), "
         "disconfirming_evidence (optional - evidence that challenges the explanation), "
         "reach ('LOCAL'/'GLOBAL' - scope of the explanation; optional), "
@@ -1627,16 +1628,31 @@ async def eif_provenance(
     name="eif_check_rules_installed",
     description=(
         "Detect whether the EIF agent rules block (<BEGIN-EIF vX.Y>, any version) is installed in this project's "
-        "agent instruction files (.cursorrules, CLAUDE.md, AGENTS.md, etc.). "
+        "agent instruction files (.cursorrules, CLAUDE.md, AGENTS.md, .cursor/rules/eif.mdc, etc.). "
         "Call this if eif_verify is producing unexpected results - missing rules are the most common cause. "
-        "IMPORTANT: default paths (.cursorrules, CLAUDE.md, etc.) are resolved relative to the MCP "
-        "server's process working directory. Pass absolute file_paths[] when the MCP server starts "
-        "from a directory other than the project root (common in IDE integrations). "
-        "Returns: installed (bool), file (path where found), version, checked_files[]."
+        "IMPORTANT: default paths are resolved relative to the MCP server's process working directory. "
+        "Pass absolute file_paths[] when the MCP server starts from a directory other than the project root. "
+        "HOSTED MCP: the remote server cannot read the client machine. When no path is readable, this tool "
+        "returns installed=false with indeterminate=true and reachable_filesystem=false — that is NOT proof "
+        "rules are missing. For hosted setups, pass file_content (the agent reads the local file first and "
+        "sends its text), or use a local (stdio) MCP server. "
+        "Returns: installed (bool), indeterminate (bool), reachable_filesystem (bool), file, version, "
+        "checked_files[], note (when indeterminate), source ('path'|'file_content'|null)."
     ),
 )
-def eif_check_rules_installed(file_paths: list[str] | None = None) -> dict:
-    """Check if EIF rules are installed in the project."""
+def eif_check_rules_installed(
+    file_paths: list[str] | None = None,
+    file_content: str | None = None,
+    file_content_label: str | None = None,
+) -> dict:
+    """Check if EIF rules are installed in the project.
+
+    Hosted MCP servers cannot open client-local paths. Agents should either:
+    - run a local (stdio) MCP server, or
+    - Read the local rules file and pass its text as file_content.
+    """
+    import re
+
     default_paths = [
         ".cursorrules",
         "CLAUDE.md",
@@ -1646,22 +1662,92 @@ def eif_check_rules_installed(file_paths: list[str] | None = None) -> dict:
         "agent_instructions.md",
     ]
     paths_to_check = file_paths or default_paths
+    marker_re = re.compile(r"<BEGIN-EIF\s+(v[\d.]+)>")
 
+    def _hit(content: str, label: str, source: str) -> dict | None:
+        if "<BEGIN-EIF" not in content:
+            return None
+        match = marker_re.search(content)
+        version = match.group(1) if match else None
+        _log.info("TOOL  eif_check_rules_installed  found=%s  version=%s  source=%s", label, version, source)
+        return {
+            "installed": True,
+            "indeterminate": False,
+            "reachable_filesystem": source == "path",
+            "file": label,
+            "version": version,
+            "checked_files": paths_to_check,
+            "source": source,
+            "note": None,
+        }
+
+    # Hosted-safe path: agent already read the local file and forwards the text.
+    if file_content is not None:
+        label = file_content_label or (paths_to_check[0] if paths_to_check else "file_content")
+        hit = _hit(file_content, label, "file_content")
+        if hit is not None:
+            return hit
+        _log.info("TOOL  eif_check_rules_installed  installed=False  source=file_content")
+        return {
+            "installed": False,
+            "indeterminate": False,
+            "reachable_filesystem": False,
+            "file": None,
+            "version": None,
+            "checked_files": paths_to_check,
+            "source": "file_content",
+            "note": (
+                "file_content was provided but no <BEGIN-EIF vX.Y> marker was found. "
+                "Install the rules block into .cursor/rules/eif.mdc (alwaysApply: true)."
+            ),
+        }
+
+    readable = 0
     for path in paths_to_check:
         try:
             with open(path, encoding="utf-8") as f:
                 content = f.read()
-            if "<BEGIN-EIF" in content:
-                import re
-                match = re.search(r"<BEGIN-EIF\s+(v[\d.]+)>", content)
-                version = match.group(1) if match else None
-                _log.info("TOOL  eif_check_rules_installed  found=%s  version=%s", path, version)
-                return {"installed": True, "file": path, "version": version, "checked_files": paths_to_check}
+            readable += 1
+            hit = _hit(content, path, "path")
+            if hit is not None:
+                return hit
         except (OSError, FileNotFoundError):
             continue
 
-    _log.info("TOOL  eif_check_rules_installed  installed=False")
-    return {"installed": False, "file": None, "version": None, "checked_files": paths_to_check}
+    if readable == 0:
+        note = (
+            "MCP server could not read any of the given paths (reachable_filesystem=false). "
+            "This is expected on the hosted endpoint (eif.leocelis.com) — it cannot see the "
+            "client machine. Do NOT treat installed=false as missing rules. "
+            "Fix: pass file_content after reading the local file, or use a local (stdio) MCP server. "
+            "Local check: grep '<BEGIN-EIF' .cursor/rules/eif.mdc"
+        )
+        _log.info("TOOL  eif_check_rules_installed  indeterminate=True  readable=0")
+        return {
+            "installed": False,
+            "indeterminate": True,
+            "reachable_filesystem": False,
+            "file": None,
+            "version": None,
+            "checked_files": paths_to_check,
+            "source": None,
+            "note": note,
+        }
+
+    _log.info("TOOL  eif_check_rules_installed  installed=False  readable=%s", readable)
+    return {
+        "installed": False,
+        "indeterminate": False,
+        "reachable_filesystem": True,
+        "file": None,
+        "version": None,
+        "checked_files": paths_to_check,
+        "source": "path",
+        "note": (
+            "Checked files were readable but no <BEGIN-EIF vX.Y> marker was found. "
+            "Install the rules block into .cursor/rules/eif.mdc (alwaysApply: true)."
+        ),
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
