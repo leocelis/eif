@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `indeterminate=true` and `reachable_filesystem=false` with a clear `note`.
 - Hosted-safe path: optional `file_content` (+ `file_content_label`) lets the
   agent Read a local rules file and forward its text for marker detection.
+- Pin optional `mcp` extra to `>=1.0,<2` so CI/installs do not pull MCP SDK
+  v2 (FastMCP → MCPServer rename) and break `from mcp.server.fastmcp import FastMCP`.
 
 ### Changed
 - `eif_explain` tool description now documents required detail keys

@@ -26,7 +26,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-mcp   = ["mcp>=1.0"]
+mcp   = ["mcp>=1.0,<2"]
 monica = [
     "sentence-transformers>=2.2",
 ]
@@ -44,7 +44,7 @@ sdk-langchain = [
     "langchain-core>=0.2",
 ]
 full  = [
-    "mcp>=1.0",
+    "mcp>=1.0,<2",
     "sentence-transformers>=2.2",
     "fpdf2>=2.7",
     "openai>=1.0",
@@ -54,7 +54,7 @@ pdf   = [
     "fpdf2>=2.7",
 ]
 server = [
-    "mcp>=1.0",
+    "mcp>=1.0,<2",
     "uvicorn>=0.27",
 ]
 dev = [
