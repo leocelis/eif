@@ -292,4 +292,4 @@ related_artifacts:
   architecture:    "docs/architecture.md"
   research:        "docs/research_foundation.md"
   cursor_rules:    ".cursor/rules/eif.mdc"
-  ivd_feedback:    "the maintainer feedback ledger (private)"
+  ivd_feedback:    "operator IVD constraint receipts (private; not shipped in this repository)"

@@ -307,4 +307,4 @@ verification_checklist:
 related_artifacts:
   research: "docs/research_foundation.md"
   engine_intent: "eif/eif_engine_intent.yaml"
-  feedback: "the maintainer feedback ledger (private)"
+  feedback: "operator IVD constraint receipts (private; not shipped in this repository)"
