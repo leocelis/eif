@@ -11,6 +11,9 @@
 #
 # Optional:
 #   COMPLYEDGE_AGENT_ID=eif-agent  (default)
+#   COMPLYEDGE_USER_ID    audit user_id   (default: GITHUB_ACTOR in CI, else $USER)
+#   COMPLYEDGE_USER_ROLE  audit user_role (default: ci in GitHub Actions, else maintainer)
+#   COMPLYEDGE_SESSION_ID audit session_id (default: GITHUB_RUN_ID-GITHUB_RUN_ATTEMPT in CI)
 #   COMPLYEDGE_API_URL=https://api.complyedge.io
 #
 # Exit codes:
@@ -39,6 +42,14 @@ print(json.dumps({
     'agent_id': os.environ['AGENT_ID'],
     'jurisdiction': 'EU',
     'direction': 'output',
+    # Recorded on the audit entry as user_id / user_role / session_id.
+    'context': {k: v for k, v in {
+        'user_id': os.environ.get('COMPLYEDGE_USER_ID') or os.environ.get('GITHUB_ACTOR') or os.environ.get('USER'),
+        'user_role': os.environ.get('COMPLYEDGE_USER_ROLE') or ('ci' if os.environ.get('GITHUB_ACTIONS') else 'maintainer'),
+        'session_id': os.environ.get('COMPLYEDGE_SESSION_ID') or (
+            os.environ['GITHUB_RUN_ID'] + '-' + os.environ.get('GITHUB_RUN_ATTEMPT', '1')
+            if os.environ.get('GITHUB_RUN_ID') else None),
+    }.items() if v},
 }))
 ")
 
