@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- ComplyEdge runtime screening on the MCP server and `/verify`. With
+  `COMPLYEDGE_API_KEY` set, every tool call (all 25 tools, through one
+  dispatch, `ComplianceFastMCP.call_tool`) and every `/verify` request is
+  checked through `POST /v1/check` twice: the input before it runs and the
+  result before it returns. A block returns the rule instead of the answer
+  (`HALT` with routing `COMPLYEDGE_BLOCKED` on `/verify`). Fail-open when
+  ComplyEdge is unreachable; no call at all without the key. Audit fields:
+  `user_id` is `eifkey:<sha256 prefix>` of the caller's key (never the key)
+  or `local:<login>`, `user_role` is `mcp_client` / `sdk_client` /
+  `maintainer`, `session_id` is the EIF or MCP session.
+- The CI runtime probe sends `user_id`, `user_role` and `session_id`.
+
 ### Fixed
 - `eif_check_rules_installed` no longer reports a definitive miss when the MCP
   server cannot read any paths (hosted endpoint / wrong CWD). Returns
@@ -17,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   v2 (FastMCP → MCPServer rename) and break `from mcp.server.fastmcp import FastMCP`.
 
 ### Changed
+- Privacy Policy v1.2 and DPA template v1.1 describe the ComplyEdge flow.
 - `eif_explain` tool description now documents required detail keys
   (`detail_text`, `prediction_impact`).
 

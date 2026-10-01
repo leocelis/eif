@@ -1,6 +1,6 @@
 # Data Processing Agreement (Template)
 
-> **Version:** 1.0 · **Effective:** 2026-07-17
+> **Version:** 1.1 · **Effective:** 2026-10-01
 >
 > **Template. Not in force.** EIF's maintainer does not process user data (see
 > [PRIVACY_POLICY.md](PRIVACY_POLICY.md)), so no DPA with the maintainer exists or is
@@ -42,8 +42,8 @@ collection, Bayesian calibration, routing (ACT/REVISE/HALT), and generation of
 provenance records, together with storage of the resulting local artifacts.
 
 `[ADAPT: describe your deployment's actual purpose and any enabled optional features,
-including outbound evidence collection (DuckDuckGo) and OpenAI-backed critique, which
-transmit claim text to those third parties.]`
+including outbound evidence collection (DuckDuckGo), OpenAI-backed critique and
+ComplyEdge runtime screening, which transmit claim text to those third parties.]`
 
 ---
 
@@ -102,6 +102,7 @@ Authorized sub-processors at signature:
 | Sub-processor | Role | Condition |
 |---------------|------|-----------|
 | `[e.g., OpenAI]` | `[Critic tournament and causal evidence probe, only if enabled]` | `[Data processing terms reference]` |
+| `[e.g., ComplyEdge]` | `[EU AI Act screening of tool inputs and results, only if COMPLYEDGE_API_KEY is set; stores a SHA-256 hash of the text, not the text]` | `[https://complyedge.io/legal/data-processing-agreement.html]` |
 | `[e.g., search provider]` | `[Web evidence collection, only if enabled]` | `[Terms reference]` |
 | `[hosting/infrastructure]` | `[Infrastructure for the deployment]` | `[DPA reference]` |
 

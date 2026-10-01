@@ -225,6 +225,8 @@ class EIFMiddleware:
             )
             return
 
+        from eif.mcp_server import compliance  # noqa: PLC0415
+
         # Run the EIF pipeline
         try:
             from eif import session as session_store  # noqa: PLC0415
@@ -234,6 +236,19 @@ class EIFMiddleware:
             )
 
             sess = await session_store.new_session()
+
+            # ComplyEdge runtime check on the claim text (off without
+            # COMPLYEDGE_API_KEY; fail-open). A block returns HALT so the SDK
+            # interceptor stops the agent, and the pipeline never runs.
+            ce_ctx = None
+            if compliance.enabled():
+                ce_ctx = compliance.attribution(
+                    data.get("api_key", "").strip() or None, "sdk_client", sess.session_id
+                )
+                verdict_in = await compliance.acheck(claim_text, "prompt", ce_ctx, "/verify")
+                if not verdict_in.allowed:
+                    await self._send_json(send, _blocked_verify("input", verdict_in), 200)
+                    return
             extracted = eif_extract_claims_from_decision(claim_text, max_claims=3)
             claims = extracted.get("claims", [])
             if not claims:
@@ -287,6 +302,14 @@ class EIFMiddleware:
             "metric_quality": matching_trail.get("metric_quality"),
         }
 
+        if ce_ctx is not None:
+            verdict_out = await compliance.acheck(
+                json.dumps(flat_response, default=str), "output", ce_ctx, "/verify"
+            )
+            if not verdict_out.allowed:
+                await self._send_json(send, _blocked_verify("output", verdict_out), 200)
+                return
+
         _log.info(
             "/verify  key=%s  verdict=%s  tier=%s",
             key_info.get("key_id", "?")[:8],
@@ -307,6 +330,23 @@ class EIFMiddleware:
             ],
         })
         await send({"type": "http.response.body", "body": payload, "more_body": False})
+
+
+def _blocked_verify(stage: str, verdict) -> dict:
+    """/verify response when ComplyEdge blocks: HALT in the SDK's flat format."""
+    from eif.mcp_server import compliance  # noqa: PLC0415
+
+    payload = compliance.blocked_payload("/verify", stage, verdict)
+    return {
+        "verdict": "HALT",
+        "routing": "COMPLYEDGE_BLOCKED",
+        "evidence_summary": payload["message"],
+        "confidence": 1.0,
+        "probe_tier": "NONE",
+        "evidence_source": "complyedge",
+        "metric_quality": None,
+        "compliance": payload,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────

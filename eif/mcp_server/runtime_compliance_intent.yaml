@@ -1,0 +1,142 @@
+# runtime_compliance_intent.yaml
+# Task-Level Intent: ComplyEdge runtime checks around every MCP tool call and /verify
+#
+# Co-located: eif/mcp_server/runtime_compliance_intent.yaml
+
+parent_intent: "../eif_engine_intent.yaml"
+
+scope:
+  level: "task"
+  type: "feature"
+  granularity: "fine"
+
+metadata:
+  feature_id: "runtime_compliance"
+  category: "compliance"
+  tags: ["complyedge", "eu-ai-act", "audit", "mcp-dispatch", "sdk-verify"]
+  status: "implemented"
+
+intent:
+  summary: "Screen every EIF tool call and every /verify request through ComplyEdge POST /v1/check when the server has a key, so the public enforcement seal reflects real traffic."
+  goal: |
+    The seal counted only a CI probe; no tool call and no SDK /verify request was
+    ever screened. All 25 tools pass through FastMCP.call_tool, so one override there
+    covers every tool and every future tool, with no per-tool wiring to miss. /verify
+    is the second entry point (the SDK interceptors) and gets the same two checks.
+  success_metric: |
+    - With a key: two /v1/check calls per tool call or /verify (prompt, then output)
+      carrying agent_id, jurisdiction and context {user_id, user_role, session_id}.
+    - A blocked input never runs the tool or the pipeline; a blocked output is never returned.
+    - ComplyEdge down or erroring never breaks a call.
+    - Without a key: zero network calls.
+  stakeholders:
+    - "Hosted MCP and SDK users (their text is screened; Privacy Policy v1.2 says so)"
+    - "Readers of the public enforcement seal"
+
+constraints:
+  - name: "checks_both_directions"
+    requirement: "With COMPLYEDGE_API_KEY set, every tool call sends direction 'prompt' (tool name + JSON arguments) before the tool runs and direction 'output' (the exact text returned) after it; /verify sends the claim text as 'prompt' and its JSON response as 'output'."
+    test: "tests/unit/test_runtime_compliance.py::test_real_tool_is_checked_on_the_way_in_and_out"
+    regression_tests:
+      - "tests/unit/test_runtime_compliance.py::test_verify_is_checked_in_and_out"
+      - "tests/unit/test_runtime_compliance.py::test_every_registered_tool_uses_the_screened_dispatch"
+    test_provenance: "execution_derived"
+    execution_oracle:
+      type: "differential_test"
+      path: "tests/unit/test_runtime_compliance.py"
+      description: "A local HTTP stub records the real request bodies; the output check's text is compared to what the real dispatch and endpoint actually returned."
+    entropy: "near-zero"
+    assumption_status: "KNOWN"
+    consequence_if_violated: "The seal claims enforcement over traffic it never saw."
+
+  - name: "attribution_never_a_credential"
+    requirement: "context.user_id is 'eifkey:' + first 12 hex of sha256(caller's EIF key) remotely, or 'local:<login>' over stdio or an open dev server; user_role is 'mcp_client', 'sdk_client' or 'maintainer'; session_id is the EIF session_id when the call carries one, else the Mcp-Session-Id header or the SSE session_id query. Neither the EIF key nor the ComplyEdge key appears in any request body."
+    test: "tests/unit/test_runtime_compliance.py::test_remote_caller_is_a_hash_never_the_key"
+    regression_tests:
+      - "tests/unit/test_runtime_compliance.py::test_sse_session_query_is_used"
+      - "tests/unit/test_runtime_compliance.py::test_verify_is_checked_in_and_out"
+    test_provenance: "execution_derived"
+    execution_oracle:
+      type: "differential_test"
+      path: "tests/unit/test_runtime_compliance.py"
+      description: "Stub-captured bodies are searched for both key strings; the hash is recomputed independently."
+    entropy: "near-zero"
+    assumption_status: "KNOWN"
+    consequence_if_violated: "A caller's API key lands in a third party's audit log."
+
+  - name: "block_is_enforced"
+    requirement: "allowed=false on the prompt check returns the blocked payload without running the tool (or the /verify pipeline); allowed=false on the output check replaces the result. /verify answers HALT with routing COMPLYEDGE_BLOCKED so SDK interceptors stop the agent."
+    test: "tests/unit/test_runtime_compliance.py::test_blocked_input_never_runs_the_tool"
+    regression_tests:
+      - "tests/unit/test_runtime_compliance.py::test_blocked_output_is_not_returned"
+      - "tests/unit/test_runtime_compliance.py::test_verify_blocked_input_halts_without_running_the_pipeline"
+      - "tests/unit/test_runtime_compliance.py::test_verify_blocked_output_halts"
+    test_provenance: "execution_derived"
+    execution_oracle:
+      type: "differential_test"
+      path: "tests/unit/test_runtime_compliance.py"
+      description: "A probe tool and a stubbed pipeline record whether they ran; the stub returns a block."
+    entropy: "near-zero"
+    assumption_status: "KNOWN"
+    consequence_if_violated: "A call recorded as blocked was delivered anyway."
+
+  - name: "fail_open_and_off_by_default"
+    requirement: "An HTTP error, timeout or unreachable ComplyEdge returns the normal result (skip logged, never on stdout: stdio carries the protocol). Without COMPLYEDGE_API_KEY no request is made."
+    test: "tests/unit/test_runtime_compliance.py::test_unreachable_complyedge_fails_open"
+    regression_tests:
+      - "tests/unit/test_runtime_compliance.py::test_server_error_fails_open"
+      - "tests/unit/test_runtime_compliance.py::test_no_key_means_no_checks"
+      - "tests/unit/test_runtime_compliance.py::test_verify_without_key_makes_no_checks"
+    test_provenance: "execution_derived"
+    execution_oracle:
+      type: "differential_test"
+      path: "tests/unit/test_runtime_compliance.py"
+      description: "Closed port and HTTP 500 stub; output compared to the no-check result."
+    entropy: "near-zero"
+    assumption_status: "KNOWN"
+    consequence_if_violated: "A compliance-service outage takes EIF down, or self-hosters send data they never opted into."
+
+constraint_satisfiability:
+  conflicts_checked:
+    - "block_is_enforced vs fail_open: only an explicit allowed=false blocks; absence of a verdict allows. EIF is developer tooling, not a high-risk system, so availability wins over fail-closed."
+  simultaneous_satisfaction: "All four hold on one remote tool call: both checks sent, attribution clean, an allow verdict returns the real result."
+  priority_order: ["attribution_never_a_credential", "block_is_enforced", "checks_both_directions", "fail_open_and_off_by_default"]
+  joint_satisfaction_test: "tests/unit/test_runtime_compliance.py::test_remote_caller_is_a_hash_never_the_key"
+
+rationale:
+  decision: "One fail-open override of FastMCP.call_tool plus the same two checks in /verify, active only with COMPLYEDGE_API_KEY."
+  reasoning: |
+    FastMCP registers its own call_tool with the low-level server, so a subclass
+    override is the single point every tool passes through. ComplyEdge's API
+    reference places the check on both the prompt and the output and names
+    user_id / user_role / session_id as the audit attribution fields. Fail-open
+    because EIF is developer tooling: availability outranks a missed check.
+  evidence: "complyedge.io/docs/api-reference.html (POST /v1/check)"
+  date: "2026-10-01"
+
+alternatives:
+  - name: "per_tool_wiring"
+    rejected_because: "25 call sites with no completeness oracle; a new tool would ship unscreened."
+  - name: "fail_closed"
+    rejected_because: "A ComplyEdge outage would take down every EIF tool for every user."
+
+risks:
+  - condition: "Two extra round trips per call add latency."
+    mitigation: "Checks run off the event loop with a 5s timeout (COMPLYEDGE_TIMEOUT_S)."
+  - condition: "Hosted users' text leaves EIF."
+    mitigation: "Privacy Policy v1.2 lists ComplyEdge; it stores a hash of the text, not the text."
+
+implementation:
+  current: "eif/mcp_server/compliance.py, eif/mcp_server/server.py (mcp = ComplianceFastMCP), eif/mcp_server/http_server.py (_handle_verify)"
+  tests: "tests/unit/test_runtime_compliance.py"
+
+verification:
+  test_cases:
+    - name: "remote call with key"
+      expect: "two checks, prompt then output, eifkey:<hash> attribution, EIF session id when given"
+    - name: "prompt check blocks"
+      expect: "tool never runs; payload names the rule and audit event"
+    - name: "/verify blocked"
+      expect: "HALT, routing COMPLYEDGE_BLOCKED, pipeline never runs"
+    - name: "ComplyEdge unreachable"
+      expect: "normal result"

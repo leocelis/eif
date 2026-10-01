@@ -1,6 +1,6 @@
 # Privacy Policy
 
-> **Version:** 1.1 · **Effective:** 2026-07-19
+> **Version:** 1.2 · **Effective:** 2026-10-01
 >
 > Short version: **self-hosted EIF collects no data from you, ever.** If you instead
 > use the optional hosted alpha endpoint (`eif.leocelis.com`), your claim text is
@@ -26,6 +26,22 @@ truncated key identifier, the routing verdict, and the evidence tier used (see
 `eif/mcp_server/http_server.py`, which is open source). No account system beyond the
 Bearer key; no analytics; no usage tracking beyond that log line.
 
+**Compliance screening on the hosted endpoint (ComplyEdge):** when enabled on the
+hosted server, each tool call and each `/verify` request is sent to ComplyEdge twice:
+the input (tool name and arguments, or the claim text) before EIF runs it, and the
+result before it is returned. ComplyEdge checks the text against its EU AI Act rules
+and returns allow or block; a blocked call returns the rule instead of the result (on
+`/verify`, a `HALT` verdict). With each check EIF sends a pseudonymous caller ID (a
+truncated SHA-256 hash of your EIF API key, never the key itself), a role
+(`mcp_client` or `sdk_client`), and your EIF or MCP session ID. ComplyEdge keeps a
+SHA-256 hash of the checked text, not the text itself, together with the decision,
+rule IDs, timestamps and those three identifiers, for 180 days, in the United States.
+These records feed EIF's public [enforcement seal](https://trust.complyedge.io/eif),
+which shows only aggregate counts. If ComplyEdge is unreachable, the call runs without
+the check. ComplyEdge is built by the same author as EIF. Legal basis (GDPR Art. 6):
+legitimate interests (Art. 6(1)(f)), keeping the hosted service's inputs and outputs
+within EU AI Act Article 5 limits and keeping a verifiable record of those checks.
+
 Because no personal data is transmitted to the maintainer through the self-hosted
 path, the maintainer is neither a controller nor a processor of your data under the
 GDPR for self-hosted use. See §5. If you choose the hosted alpha endpoint, see §5 for
@@ -35,7 +51,7 @@ how that changes this analysis.
 
 ## 2. Data Flows You Can Initiate
 
-Two optional features make outbound network calls. Both go **directly from your
+Three optional features make outbound network calls. All go **directly from your
 machine to the third party**; the maintainer is not in the path and receives nothing.
 
 - **DuckDuckGo search** (via the `ddgs` library): if you enable web evidence
@@ -45,6 +61,10 @@ machine to the third party**; the maintainer is not in the path and receives not
   causal evidence probe then send claim and evidence text to the OpenAI API under your
   own account. OpenAI's terms and privacy policies apply, including their data-usage
   and retention settings for your account.
+- **ComplyEdge**: only if you set `COMPLYEDGE_API_KEY` on your own server. Every tool
+  call and `/verify` request is then screened as described in §1 (hosted endpoint),
+  under your own ComplyEdge account and its terms. Without the variable, EIF makes no
+  ComplyEdge call.
 
 Do not enable these features on claims containing personal data, credentials, or
 confidential information unless your own arrangements with those providers cover that
@@ -98,7 +118,7 @@ guarantee is categorical.
 
 If your use of EIF involves personal data (in claims, evidence, or local artifacts),
 you are the controller for that processing, including any transmission to
-DuckDuckGo, OpenAI, or the hosted alpha endpoint that you enable.
+DuckDuckGo, OpenAI, ComplyEdge, or the hosted alpha endpoint that you enable.
 
 ---
 

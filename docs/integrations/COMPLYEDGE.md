@@ -11,7 +11,8 @@ EIF uses [ComplyEdge](https://complyedge.io) TrustLint on LLM-facing artifacts: 
 | Layer | Mechanism | API key in repo? | Blocks merge? |
 |-------|-----------|------------------|---------------|
 | **Offline gate** | `trustlint check` via `./scripts/compliance/check.sh` | No | Yes (CI `compliance` job) |
-| **Runtime enforcement** | `POST /v1/check` via `./scripts/compliance/runtime_check.sh` | No (BYOK env only) | No (opt-in, push-to-main) |
+| **Runtime enforcement (CI)** | `POST /v1/check` via `./scripts/compliance/runtime_check.sh` | No (BYOK env only) | No (opt-in, push-to-main) |
+| **Runtime enforcement (MCP + `/verify`)** | `POST /v1/check` on every tool call and every `/verify` request | No (server env only) | Blocks the call itself |
 | **Public proof** | Live seal + trust JSON | No | N/A |
 
 ```
@@ -19,6 +20,43 @@ edit eif/**/*_intent.yaml -> check.sh -> CI green
                     v optional BYOK
               runtime_check.sh -> /v1/check -> audit trail -> badge + trust page
 ```
+
+---
+
+## MCP server and `/verify`
+
+With `COMPLYEDGE_API_KEY` set on the server, `eif/mcp_server/compliance.py` checks
+every call twice through `POST /v1/check`:
+
+1. the input, `direction: "prompt"`, before EIF runs it (tool name plus JSON
+   arguments, or the `/verify` claim text)
+2. the result, `direction: "output"`, before it is returned
+
+All 25 tools pass through one dispatch, `ComplianceFastMCP.call_tool`, so every tool,
+including future ones, is covered. A blocked check replaces the answer:
+
+- MCP tools return `{"blocked": true, "blocked_by": "ComplyEdge", "stage", "message",
+  "violations": [{rule_id, description}], "audit_event_id"}`
+- `/verify` returns `verdict: "HALT"`, `routing: "COMPLYEDGE_BLOCKED"`, with the same
+  payload under `compliance`, so the SDK interceptors stop the agent
+
+If ComplyEdge is unreachable or errors, the call runs without the check (fail-open,
+logged). Without the key, EIF makes no ComplyEdge call.
+
+Audit attribution on every check (never a credential):
+
+| Field | Value |
+|-------|-------|
+| `agent_id` | `eif-mcp` (`COMPLYEDGE_AGENT_ID`) |
+| `jurisdiction` | `EU` (`COMPLYEDGE_JURISDICTION`) |
+| `context.user_id` | `eifkey:` + first 12 hex of SHA-256 of the caller's EIF key; `local:<login>` over stdio or an open dev server |
+| `context.user_role` | `mcp_client` (MCP over HTTP), `sdk_client` (`/verify`), `maintainer` (local) |
+| `context.session_id` | the EIF `session_id` when the call has one, else the MCP session |
+
+Env: `COMPLYEDGE_API_KEY`, `COMPLYEDGE_API_URL` (default `https://api.complyedge.io`),
+`COMPLYEDGE_AGENT_ID`, `COMPLYEDGE_JURISDICTION`, `COMPLYEDGE_TIMEOUT_S` (default 5).
+Tests: `tests/unit/test_runtime_compliance.py`. Intent:
+`eif/mcp_server/runtime_compliance_intent.yaml`.
 
 ---
 
@@ -39,7 +77,7 @@ The seal reflects **live runtime audit data** (checks in 24h / 30d). It is not a
 
 | Path | Role |
 |------|------|
-| `eif/**/*_intent.yaml` (14 files) | IVD-style intent artifacts - constraints the engine's design was built against |
+| `eif/**/*_intent.yaml` (15 files) | IVD-style intent artifacts - constraints the engine's design was built against |
 
 Scope is set in `.trustlint.yaml` and mirrored in `scripts/compliance/check.sh`'s `find` target.
 
@@ -95,5 +133,5 @@ export COMPLYEDGE_API_KEY=ce_...
 - Offline gate script: `scripts/compliance/check.sh`
 - Runtime probe script: `scripts/compliance/runtime_check.sh`
 - TrustLint config: `.trustlint.yaml`
-- CE OSS adoption guide: `complyedge-platform/docs/development/oss-trustlint-adoption-guide.md`
+- ComplyEdge API reference: https://complyedge.io/docs/api-reference.html
 - Same pattern: [leocelis/ivd](https://github.com/leocelis/ivd), [leocelis/horizon](https://github.com/leocelis/horizon)

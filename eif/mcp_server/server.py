@@ -195,7 +195,11 @@ _ts = _transport_security()
 if _ts is not None:
     _fastmcp_kwargs["transport_security"] = _ts
 
-mcp = FastMCP("eif-engine", **_fastmcp_kwargs)
+# ComplianceFastMCP screens every tool call through ComplyEdge when the server
+# has COMPLYEDGE_API_KEY; without it this is plain FastMCP (compliance.py).
+from eif.mcp_server.compliance import ComplianceFastMCP  # noqa: E402
+
+mcp = ComplianceFastMCP("eif-engine", **_fastmcp_kwargs)
 
 # ── EIF context reference card ────────────────────────────────────────────────
 
