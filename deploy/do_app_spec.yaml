@@ -62,6 +62,11 @@ services:
       - key: OPENAI_API_KEY
         type: SECRET
         scope: RUN_TIME
+      # Optional: ComplyEdge runtime screening of every tool call and /verify
+      # (docs/integrations/COMPLYEDGE.md). Unset = no ComplyEdge calls.
+      - key: COMPLYEDGE_API_KEY
+        type: SECRET
+        scope: RUN_TIME
 
 # Custom domain: add in the DO dashboard (Settings -> Domains), e.g.
 # eif.<your-domain>, then CNAME it to the app's default hostname.
