@@ -95,7 +95,11 @@ def test_real_tool_is_checked_on_the_way_in_and_out(stub):
     assert prompt["text"] == "eif_new_session {}"
     assert output["direction"] == "output"
     assert output["text"] == _text(result)
-    assert "session_id" in json.loads(_text(result))
+    created = json.loads(_text(result))["session_id"]
+    # No session existed when the call came in; the output carries the new one
+    # so the pair links to the calls that follow (2026-10-01).
+    assert "session_id" not in prompt["context"]
+    assert output["context"]["session_id"] == created
     for body in stub["seen"]:
         assert body["agent_id"] == "eif-mcp"
         assert body["jurisdiction"] == "EU"

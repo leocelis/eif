@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `user_id` is `eifkey:<sha256 prefix>` of the caller's key (never the key)
   or `local:<login>`, `user_role` is `mcp_client` / `sdk_client` /
   `maintainer`, `session_id` is the EIF or MCP session.
+  A call made before any session exists (`eif_new_session`) records the
+  session it created on its output check, so it links to the calls after it.
 - The CI runtime probe sends `user_id`, `user_role` and `session_id`.
 
 ### Fixed

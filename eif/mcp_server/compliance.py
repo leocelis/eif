@@ -166,6 +166,16 @@ def _result_text(result: Any) -> str:
     return "\n".join(parts)
 
 
+def _session_in_result(text: str) -> str | None:
+    """The session_id a tool returned, if its result is a JSON object with one."""
+    try:
+        data = json.loads(text)
+    except (ValueError, TypeError):
+        return None
+    sid = data.get("session_id") if isinstance(data, dict) else None
+    return sid if isinstance(sid, str) and sid else None
+
+
 def _request_identity(server: FastMCP, arguments: dict) -> tuple[str | None, str | None]:
     """(caller's bearer key, session id) for the current call; (None, ...) over stdio."""
     session = arguments.get("session_id") if isinstance(arguments.get("session_id"), str) else None
@@ -204,8 +214,17 @@ class ComplianceFastMCP(FastMCP):
             return [TextContent(type="text", text=json.dumps(blocked_payload(name, "input", verdict), indent=2))]
 
         result = await super().call_tool(name, arguments)
+        text = _result_text(result)
 
-        verdict = await acheck(_result_text(result), "output", ctx, name)
+        # A call made before any session exists (eif_new_session) gets its
+        # session from the result, so its output record links to the calls
+        # that follow. The input record keeps none: no session existed yet.
+        if "session_id" not in ctx:
+            created = _session_in_result(text)
+            if created:
+                ctx = {**ctx, "session_id": created}
+
+        verdict = await acheck(text, "output", ctx, name)
         if not verdict.allowed:
             return [TextContent(type="text", text=json.dumps(blocked_payload(name, "output", verdict), indent=2))]
         return result
