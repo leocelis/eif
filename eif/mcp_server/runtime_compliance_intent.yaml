@@ -50,7 +50,7 @@ constraints:
     consequence_if_violated: "The seal claims enforcement over traffic it never saw."
 
   - name: "attribution_never_a_credential"
-    requirement: "context.user_id is 'eifkey:' + first 12 hex of sha256(caller's EIF key) remotely, or 'local:<login>' over stdio or an open dev server; user_role is 'mcp_client', 'sdk_client' or 'maintainer'; session_id is the EIF session_id when the call carries one, else the Mcp-Session-Id header or the SSE session_id query; a call with no session yet (eif_new_session) records the session_id it returned on its output check. Neither the EIF key nor the ComplyEdge key appears in any request body."
+    requirement: "context.user_id is 'eifkey:' + first 12 hex of sha256(caller's EIF key) remotely, or 'local:<login>' over stdio or an open dev server; user_role is 'mcp_client', 'sdk_client' or 'maintainer'; session_id is the EIF session_id when the call carries one, else the Mcp-Session-Id header or the SSE session_id query; a call that names no EIF session (eif_new_session) records the session_id it returned on its output check, even when an MCP session id exists. Neither the EIF key nor the ComplyEdge key appears in any request body."
     test: "tests/unit/test_runtime_compliance.py::test_remote_caller_is_a_hash_never_the_key"
     regression_tests:
       - "tests/unit/test_runtime_compliance.py::test_sse_session_query_is_used"

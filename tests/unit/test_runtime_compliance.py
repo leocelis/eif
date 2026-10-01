@@ -120,8 +120,11 @@ def test_remote_caller_is_a_hash_never_the_key(stub, monkeypatch):
     assert len(ctxs) == 4
     assert all(c["user_id"] == f"eifkey:{digest}" for c in ctxs)
     assert all(c["user_role"] == "mcp_client" for c in ctxs)
-    # No EIF session yet -> the MCP session; once the call names one, that one.
-    assert [c["session_id"] for c in ctxs] == ["mcp-sess-7", "mcp-sess-7", created["session_id"], created["session_id"]]
+    # Input of eif_new_session: no EIF session yet, so the MCP session. Its
+    # output: the EIF session it created, the one the next calls use
+    # (2026-10-01, hosted run linked it to the MCP session instead).
+    sid = created["session_id"]
+    assert [c["session_id"] for c in ctxs] == ["mcp-sess-7", sid, sid, sid]
     dumped = json.dumps(stub["seen"])
     assert eif_key not in dumped and KEY not in dumped
 

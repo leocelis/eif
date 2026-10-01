@@ -216,10 +216,11 @@ class ComplianceFastMCP(FastMCP):
         result = await super().call_tool(name, arguments)
         text = _result_text(result)
 
-        # A call made before any session exists (eif_new_session) gets its
-        # session from the result, so its output record links to the calls
-        # that follow. The input record keeps none: no session existed yet.
-        if "session_id" not in ctx:
+        # A call that names no EIF session (eif_new_session) takes the session
+        # it created from the result, so its output record links to the calls
+        # that follow. This wins over the MCP connection id, which those later
+        # calls do not use. The input record keeps what it had.
+        if not isinstance(arguments.get("session_id"), str):
             created = _session_in_result(text)
             if created:
                 ctx = {**ctx, "session_id": created}
