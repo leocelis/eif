@@ -34,7 +34,7 @@ Env:
   COMPLYEDGE_API_URL      default https://api.complyedge.io
   COMPLYEDGE_AGENT_ID     default eif-mcp
   COMPLYEDGE_JURISDICTION default EU
-  COMPLYEDGE_TIMEOUT_S    default 5
+  COMPLYEDGE_TIMEOUT_S    default 15 (a cold ComplyEdge instance answers in ~8 s; a shorter wait drops its verdict and Log ID)
 """
 
 from __future__ import annotations
@@ -117,7 +117,7 @@ def check(text: str, direction: str, context: dict) -> Verdict:
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
     )
     try:
-        timeout = float(os.environ.get("COMPLYEDGE_TIMEOUT_S", "5"))
+        timeout = float(os.environ.get("COMPLYEDGE_TIMEOUT_S", "15"))
         with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - configured https host
             data = json.loads(resp.read())
         return Verdict(

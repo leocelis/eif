@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **ComplyEdge checks wait 15 s by default (was 5).** A cold ComplyEdge instance answers in
+  about 8 s; with 5 s the check was skipped, so the caller lost the verdict and the Log ID
+  of a record ComplyEdge had written. `COMPLYEDGE_TIMEOUT_S` still overrides it.
 ### Added
 - ComplyEdge runtime screening on the MCP server and `/verify`. With
   `COMPLYEDGE_API_KEY` set, every tool call (all 25 tools, through one

@@ -87,7 +87,7 @@ Audit attribution on every check (never a credential):
 | `context.session_id` | the EIF `session_id` when the call has one, else the MCP session |
 
 Env: `COMPLYEDGE_API_KEY`, `COMPLYEDGE_API_URL` (default `https://api.complyedge.io`),
-`COMPLYEDGE_AGENT_ID`, `COMPLYEDGE_JURISDICTION`, `COMPLYEDGE_TIMEOUT_S` (default 5).
+`COMPLYEDGE_AGENT_ID`, `COMPLYEDGE_JURISDICTION`, `COMPLYEDGE_TIMEOUT_S` (default 15: a cold ComplyEdge instance can take ~8 s to answer, and a check that times out is skipped, verdict and Log ID with it).
 Tests: `tests/unit/test_runtime_compliance.py`. Intent:
 `eif/mcp_server/runtime_compliance_intent.yaml`.
 
