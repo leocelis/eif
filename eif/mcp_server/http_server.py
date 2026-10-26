@@ -241,13 +241,17 @@ class EIFMiddleware:
             # COMPLYEDGE_API_KEY; fail-open). A block returns HALT so the SDK
             # interceptor stops the agent, and the pipeline never runs.
             ce_ctx = None
+            verdict_in = None
             if compliance.enabled():
                 ce_ctx = compliance.attribution(
                     data.get("api_key", "").strip() or None, "sdk_client", sess.session_id
                 )
                 verdict_in = await compliance.acheck(claim_text, "prompt", ce_ctx, "/verify")
                 if not verdict_in.allowed:
-                    await self._send_json(send, _blocked_verify("input", verdict_in), 200)
+                    await self._send_json(
+                        send, _blocked_verify("input", verdict_in), 200,
+                        headers=_log_id_headers(compliance.log_ids(verdict_in, None)),
+                    )
                     return
             extracted = eif_extract_claims_from_decision(claim_text, max_claims=3)
             claims = extracted.get("claims", [])
@@ -302,13 +306,17 @@ class EIFMiddleware:
             "metric_quality": matching_trail.get("metric_quality"),
         }
 
+        # The checked output text is exactly the body sent, so the caller's copy
+        # verifies against the output Log ID.
+        body_text = json.dumps(flat_response, default=str)
+        headers: list[tuple[bytes, bytes]] = []
         if ce_ctx is not None:
-            verdict_out = await compliance.acheck(
-                json.dumps(flat_response, default=str), "output", ce_ctx, "/verify"
-            )
+            verdict_out = await compliance.acheck(body_text, "output", ce_ctx, "/verify")
+            ids = compliance.log_ids(verdict_in, verdict_out)
             if not verdict_out.allowed:
-                await self._send_json(send, _blocked_verify("output", verdict_out), 200)
+                await self._send_json(send, _blocked_verify("output", verdict_out), 200, headers=_log_id_headers(ids))
                 return
+            headers = _log_id_headers(ids)
 
         _log.info(
             "/verify  key=%s  verdict=%s  tier=%s",
@@ -316,20 +324,27 @@ class EIFMiddleware:
             verdict,
             flat_response["probe_tier"],
         )
-        await self._send_json(send, flat_response, 200)
+        await self._send_json(send, body_text, 200, headers=headers)
 
     @staticmethod
-    async def _send_json(send, body: dict, status: int) -> None:
-        payload = json.dumps(body).encode()
+    async def _send_json(send, body: dict | str, status: int, headers: list | None = None) -> None:
+        payload = (body if isinstance(body, str) else json.dumps(body)).encode()
         await send({
             "type": "http.response.start",
             "status": status,
             "headers": [
                 (b"content-type", b"application/json"),
                 (b"content-length", str(len(payload)).encode()),
+                *(headers or []),
             ],
         })
         await send({"type": "http.response.body", "body": payload, "more_body": False})
+
+
+def _log_id_headers(ids: dict) -> list[tuple[bytes, bytes]]:
+    """ComplyEdge Log IDs as response headers, outside the checked body."""
+    names = {"input_event_id": b"complyedge-input-event-id", "output_event_id": b"complyedge-output-event-id"}
+    return [(names[k], v.encode()) for k, v in ids.items() if v]
 
 
 def _blocked_verify(stage: str, verdict) -> dict:

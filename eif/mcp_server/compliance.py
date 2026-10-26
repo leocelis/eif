@@ -11,6 +11,13 @@ A blocked check replaces the answer with the rule that fired. If ComplyEdge
 cannot be reached the tool still answers: an outage of the compliance
 service never breaks EIF (fail-open, logged).
 
+Log IDs: every check returns an event_id. ComplyEdge keeps a fingerprint of
+the text, never the text, so the event_id is only useful next to a copy of
+the text, and EIF keeps none past the session. Both IDs therefore go back to
+the caller, outside the checked text: in the result's _meta under
+"complyedge" for MCP tools, in response headers for /verify. They are also
+listed on the EIF session, so eif_record and eif_compliance_report carry them.
+
 Every MCP tool passes through FastMCP.call_tool, so ComplianceFastMCP
 overrides that one method and covers all tools, including future ones.
 
@@ -44,9 +51,12 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
-from mcp.types import TextContent
+from mcp.types import CallToolResult, TextContent
+
+from eif import session as session_store
 
 MAX_TEXT = 50000  # /v1/check rejects text longer than this
+META_KEY = "complyedge"  # _meta key that carries the Log IDs on an MCP result
 
 _log = logging.getLogger("eif.compliance")
 
@@ -153,17 +163,57 @@ def blocked_payload(what: str, stage: str, verdict: Verdict) -> dict:
     }
 
 
-def _result_text(result: Any) -> str:
-    """The text a client receives for a FastMCP tool result."""
+def _as_call_result(result: Any) -> CallToolResult:
+    """A FastMCP tool result as the CallToolResult the client receives.
+
+    Mirrors the conversion the MCP server applies when a tool returns plain
+    content, so the checked text is exactly the text the client gets.
+    """
+    if isinstance(result, CallToolResult):
+        return result
+    structured = None
     if isinstance(result, tuple):  # (content blocks, structured)
-        result = result[0]
-    if isinstance(result, dict):
-        return json.dumps(result, default=str)
+        result, structured = result
+    elif isinstance(result, dict):
+        structured = result
+        result = [TextContent(type="text", text=json.dumps(result, indent=2))]
+    return CallToolResult(content=list(result or []), structuredContent=structured)
+
+
+def _result_text(result: CallToolResult) -> str:
+    """The text of a tool result: its content blocks joined by a newline."""
     parts = []
-    for block in result or []:
+    for block in result.content:
         text = getattr(block, "text", None)
         parts.append(text if text is not None else str(block))
     return "\n".join(parts)
+
+
+def log_ids(verdict_in: Verdict | None, verdict_out: Verdict | None) -> dict:
+    """The two Log IDs of one call; None where a check did not run."""
+    return {
+        "input_event_id": verdict_in.event_id if verdict_in else None,
+        "output_event_id": verdict_out.event_id if verdict_out else None,
+    }
+
+
+def _with_log_ids(result: CallToolResult, ids: dict) -> CallToolResult:
+    meta = dict(result.meta or {})
+    meta[META_KEY] = ids
+    return result.model_copy(update={"meta": meta})
+
+
+def _blocked_result(what: str, stage: str, verdict: Verdict, ids: dict) -> CallToolResult:
+    text = json.dumps(blocked_payload(what, stage, verdict), indent=2)
+    return _with_log_ids(CallToolResult(content=[TextContent(type="text", text=text)]), ids)
+
+
+async def _note(session_id: str | None, tool: str, direction: str, verdict: Verdict) -> None:
+    """List a Log ID on the EIF session the call belongs to, if there is one."""
+    if session_id and verdict.event_id:
+        await session_store.note_complyedge_event(
+            session_id, {"tool": tool, "direction": direction, "event_id": verdict.event_id}
+        )
 
 
 def _session_in_result(text: str) -> str | None:
@@ -208,24 +258,28 @@ class ComplianceFastMCP(FastMCP):
 
         key, session = _request_identity(self, arguments)
         ctx = attribution(key, "mcp_client", session)
+        eif_session = arguments.get("session_id") if isinstance(arguments.get("session_id"), str) else None
 
-        verdict = await acheck(arguments_text(name, arguments), "prompt", ctx, name)
-        if not verdict.allowed:
-            return [TextContent(type="text", text=json.dumps(blocked_payload(name, "input", verdict), indent=2))]
+        verdict_in = await acheck(arguments_text(name, arguments), "prompt", ctx, name)
+        if not verdict_in.allowed:
+            return _blocked_result(name, "input", verdict_in, log_ids(verdict_in, None))
+        await _note(eif_session, name, "prompt", verdict_in)
 
-        result = await super().call_tool(name, arguments)
+        result = _as_call_result(await super().call_tool(name, arguments))
         text = _result_text(result)
 
         # A call that names no EIF session (eif_new_session) takes the session
         # it created from the result, so its output record links to the calls
         # that follow. This wins over the MCP connection id, which those later
         # calls do not use. The input record keeps what it had.
-        if not isinstance(arguments.get("session_id"), str):
+        if eif_session is None:
             created = _session_in_result(text)
             if created:
                 ctx = {**ctx, "session_id": created}
+                eif_session = created
 
-        verdict = await acheck(text, "output", ctx, name)
-        if not verdict.allowed:
-            return [TextContent(type="text", text=json.dumps(blocked_payload(name, "output", verdict), indent=2))]
-        return result
+        verdict_out = await acheck(text, "output", ctx, name)
+        if not verdict_out.allowed:
+            return _blocked_result(name, "output", verdict_out, log_ids(verdict_in, verdict_out))
+        await _note(eif_session, name, "output", verdict_out)
+        return _with_log_ids(result, log_ids(verdict_in, verdict_out))

@@ -43,6 +43,39 @@ including future ones, is covered. A blocked check replaces the answer:
 If ComplyEdge is unreachable or errors, the call runs without the check (fail-open,
 logged). Without the key, EIF makes no ComplyEdge call.
 
+### Log IDs
+
+ComplyEdge keeps a keyed fingerprint of each checked text, never the text. Every
+check returns an `event_id` (the Log ID), and the Log ID only proves something next to
+a copy of the text. EIF keeps no text past the session, so it hands both Log IDs back
+to you, outside the checked text:
+
+- MCP tools: the result's `_meta`:
+  `{"complyedge": {"input_event_id": "...", "output_event_id": "..."}}`
+- `/verify`: response headers `complyedge-input-event-id` and
+  `complyedge-output-event-id`
+
+A Log ID is `null` (or the header is absent) when that check did not run (no key,
+ComplyEdge unreachable, or an input block that stopped the call). The text you receive
+is exactly the text that was checked, so store each Log ID next to your copy:
+
+| Log ID | Text it covers |
+|--------|----------------|
+| MCP input | `<tool name> <arguments as JSON with sorted keys>` |
+| MCP output | the result's text blocks joined by a newline |
+| `/verify` input | `claim_text` as sent |
+| `/verify` output | the response body |
+
+A text longer than 50,000 characters is checked on its first 50,000.
+
+On an EIF session, the Log IDs of its calls are also listed on the session,
+copied onto the decision record by `eif_record` (`complyedge_event_ids`) and printed by
+`eif_compliance_report`. Later, `POST /v1/audit/verify` with a Log ID and your copy of
+the text answers whether they match
+([how audit reconciliation works](https://complyedge.io/docs/audit-reconciliation.html)).
+
+Requires `mcp>=1.19`.
+
 Audit attribution on every check (never a credential):
 
 | Field | Value |

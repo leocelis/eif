@@ -379,6 +379,11 @@ class ProvenanceRecord(BaseModel):
     # downstream consumers (e.g. eif_record callers) can inspect article
     # coverage without a second tool call.
     articles_covered: dict[str, list[str]] = Field(default_factory=dict)
+    # ComplyEdge Log IDs of the session's checked calls up to and including this
+    # record's eif_record input: {tool, direction, event_id}. ComplyEdge holds
+    # only a fingerprint of each text; an event_id plus the caller's copy of the
+    # text verifies through POST /v1/audit/verify. Empty when screening is off.
+    complyedge_event_ids: list[dict] = Field(default_factory=list)
 
     @staticmethod
     def compute_fingerprint(decision: str, registry: AssumptionRegistry) -> str:
@@ -497,6 +502,10 @@ class SessionState(BaseModel):
     last_causal_gate: dict | None = None
     # ExplanationArtifact from eif_explain.
     last_explanation: dict | None = None
+    # ComplyEdge Log IDs of this session's checked tool calls, in call order:
+    # {tool, direction ("prompt" | "output"), event_id}. Written by the
+    # compliance wrapper; eif_record copies them onto the ProvenanceRecord.
+    complyedge_event_ids: list[dict] = Field(default_factory=list)
 
 
 # ─────────────────────────────────────────────

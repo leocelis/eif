@@ -21,6 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A call made before any session exists (`eif_new_session`) records the
   session it created on its output check, so it links to the calls after it.
 - The CI runtime probe sends `user_id`, `user_role` and `session_id`.
+- ComplyEdge Log IDs reach the caller. Every checked MCP tool call returns
+  `_meta["complyedge"] = {input_event_id, output_event_id}`, and `/verify`
+  returns them as `complyedge-input-event-id` / `complyedge-output-event-id`
+  headers, both outside the checked text, which is returned byte for byte.
+  Log IDs of calls on an EIF session are listed on it, copied onto the
+  `ProvenanceRecord` (`complyedge_event_ids`) by `eif_record` and printed by
+  `eif_compliance_report`. With the caller's copy of the text, each one
+  verifies through ComplyEdge `POST /v1/audit/verify`.
 
 ### Fixed
 - `eif_check_rules_installed` no longer reports a definitive miss when the MCP
@@ -33,6 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Privacy Policy v1.2 and DPA template v1.1 describe the ComplyEdge flow.
+- `mcp` minimum raised to 1.19 (tools return `CallToolResult` with `_meta`).
+- Privacy Policy v1.3: ComplyEdge keeps a keyed fingerprint and pseudonymous
+  IDs for 184 days, and the Log IDs come back to the caller.
 - `eif_explain` tool description now documents required detail keys
   (`detail_text`, `prediction_impact`).
 

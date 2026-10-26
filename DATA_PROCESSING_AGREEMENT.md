@@ -102,7 +102,7 @@ Authorized sub-processors at signature:
 | Sub-processor | Role | Condition |
 |---------------|------|-----------|
 | `[e.g., OpenAI]` | `[Critic tournament and causal evidence probe, only if enabled]` | `[Data processing terms reference]` |
-| `[e.g., ComplyEdge]` | `[EU AI Act screening of tool inputs and results, only if COMPLYEDGE_API_KEY is set; stores a SHA-256 hash of the text, not the text]` | `[https://complyedge.io/legal/data-processing-agreement.html]` |
+| `[e.g., ComplyEdge]` | `[EU AI Act screening of tool inputs and results, only if COMPLYEDGE_API_KEY is set; stores a keyed HMAC-SHA-256 fingerprint of the text, not the text]` | `[https://complyedge.io/legal/data-processing-agreement.html]` |
 | `[e.g., search provider]` | `[Web evidence collection, only if enabled]` | `[Terms reference]` |
 | `[hosting/infrastructure]` | `[Infrastructure for the deployment]` | `[DPA reference]` |
 

@@ -96,11 +96,28 @@ constraints:
     assumption_status: "KNOWN"
     consequence_if_violated: "A compliance-service outage takes EIF down, or self-hosters send data they never opted into."
 
+  - name: "log_ids_reach_the_caller"
+    requirement: "Every checked call hands its Log IDs (the event_id of the input and of the output check; null where a check did not run) back to the caller outside the checked text: MCP result _meta['complyedge'] = {input_event_id, output_event_id}; /verify headers complyedge-input-event-id and complyedge-output-event-id. The text the caller receives is byte-for-byte the text that was checked. Log IDs of calls on an EIF session are listed on it, copied onto the ProvenanceRecord by eif_record and printed by eif_compliance_report. EIF stores no text and adds no store."
+    test: "tests/unit/test_runtime_compliance.py::test_allowed_call_hands_both_log_ids_back_outside_the_checked_text"
+    regression_tests:
+      - "tests/unit/test_runtime_compliance.py::test_blocked_calls_carry_the_log_ids_that_exist"
+      - "tests/unit/test_runtime_compliance.py::test_session_record_and_report_carry_the_log_ids"
+      - "tests/unit/test_runtime_compliance.py::test_verify_returns_log_ids_in_headers_and_the_checked_body"
+      - "tests/unit/test_runtime_compliance.py::test_log_id_on_a_missing_session_never_fails_the_call"
+    test_provenance: "execution_derived"
+    execution_oracle:
+      type: "differential_test"
+      path: "tests/unit/test_runtime_compliance.py"
+      description: "The stub's recorded check text is compared with the text and body the client receives; the stub's event_ids are compared with _meta, headers and the provenance record."
+    entropy: "near-zero"
+    assumption_status: "KNOWN"
+    consequence_if_violated: "ComplyEdge holds only a fingerprint, so without the event_id beside the caller's copy of the text nobody can show which text a record covers (POST /v1/audit/verify)."
+
 constraint_satisfiability:
   conflicts_checked:
     - "block_is_enforced vs fail_open: only an explicit allowed=false blocks; absence of a verdict allows. EIF is developer tooling, not a high-risk system, so availability wins over fail-closed."
-  simultaneous_satisfaction: "All four hold on one remote tool call: both checks sent, attribution clean, an allow verdict returns the real result."
-  priority_order: ["attribution_never_a_credential", "block_is_enforced", "checks_both_directions", "fail_open_and_off_by_default"]
+  simultaneous_satisfaction: "All five hold on one remote tool call: both checks sent, attribution clean, an allow verdict returns the real result with both Log IDs in _meta."
+  priority_order: ["attribution_never_a_credential", "block_is_enforced", "checks_both_directions", "fail_open_and_off_by_default", "log_ids_reach_the_caller"]
   joint_satisfaction_test: "tests/unit/test_runtime_compliance.py::test_remote_caller_is_a_hash_never_the_key"
 
 rationale:
@@ -124,7 +141,7 @@ risks:
   - condition: "Two extra round trips per call add latency."
     mitigation: "Checks run off the event loop with a 5s timeout (COMPLYEDGE_TIMEOUT_S)."
   - condition: "Hosted users' text leaves EIF."
-    mitigation: "Privacy Policy v1.2 lists ComplyEdge; it stores a hash of the text, not the text."
+    mitigation: "Privacy Policy v1.3 lists ComplyEdge; it stores a keyed fingerprint of the text, not the text."
 
 implementation:
   current: "eif/mcp_server/compliance.py, eif/mcp_server/server.py (mcp = ComplianceFastMCP), eif/mcp_server/http_server.py (_handle_verify)"

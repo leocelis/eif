@@ -1246,6 +1246,10 @@ async def eif_record(
         metric_quality_flags=list(getattr(sess, "metric_quality_flags", [])),  # F17
         input_guard=getattr(sess, "last_input_guard", None),  # IG6
     )
+    # ComplyEdge Log IDs listed on the session so far, including this call's
+    # own input check (the wrapper lists it before the tool runs).
+    if sess.complyedge_event_ids:
+        record = record.model_copy(update={"complyedge_event_ids": list(sess.complyedge_event_ids)})
 
     updated_sess = append_to_chain(sess, record)
     await session_store.update_session(
@@ -3329,6 +3333,14 @@ async def eif_compliance_report(
             for flag in mq_flags:
                 lines.append(f"  - {flag}")
             lines.append("**EU AI Act mapping:** Art. 9 (degraded evidence quality - verify before acting)")
+
+        # ComplyEdge Log IDs: each verifies against the caller's copy of the
+        # text through POST /v1/audit/verify.
+        ce_ids = getattr(record, "complyedge_event_ids", None) or []
+        if ce_ids:
+            lines.append(f"**ComplyEdge Log IDs ({len(ce_ids)}):**")
+            for entry in ce_ids:
+                lines.append(f"  - `{entry.get('event_id')}` {entry.get('tool')} ({entry.get('direction')})")
 
         lines.append("")
 

@@ -19,7 +19,10 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from types import SimpleNamespace
 
 import pytest
+from mcp.server.fastmcp.exceptions import ToolError
+from mcp.types import CallToolResult
 
+from eif import session as session_store
 from eif.mcp_server import compliance
 from eif.mcp_server import server as eif_server
 from eif.mcp_server.server import mcp
@@ -79,7 +82,8 @@ def _remote(monkeypatch, headers=None, query=None):
 
 
 def _text(result) -> str:
-    return "\n".join(block.text for block in result)
+    blocks = result.content if isinstance(result, CallToolResult) else result
+    return "\n".join(block.text for block in blocks)
 
 
 def _block(rule="EU-AI-ACT-ART5-TEST"):
@@ -262,3 +266,99 @@ def test_verify_without_key_makes_no_checks(stub, verify_client, monkeypatch):
     r = client.post("/verify", json={"claim_text": "fine text", "api_key": "k"})
     assert r.json()["verdict"] == "PASS"
     assert stub["seen"] == [] and ran == ["fine text"]
+
+
+# ── Log IDs (the event_id joins ComplyEdge's record to the caller's text) ────
+
+
+def test_allowed_call_hands_both_log_ids_back_outside_the_checked_text(stub, probe_tool):
+    result = asyncio.run(mcp.call_tool("ce_probe_tool", {"q": "hello"}))
+
+    assert isinstance(result, CallToolResult)
+    assert result.meta["complyedge"] == {"input_event_id": "evt-1", "output_event_id": "evt-2"}
+    # The text the client receives is exactly the text that was checked, so
+    # the caller's copy verifies against the output Log ID.
+    assert stub["seen"][1]["text"] == _text(result)
+    assert "evt-" not in _text(result)
+
+
+def test_structured_content_survives_the_conversion():
+    block = compliance.TextContent(type="text", text='{"a": 1}')
+    converted = compliance._as_call_result(([block], {"a": 1}))
+    assert converted.content == [block] and converted.structuredContent == {"a": 1}
+
+
+def test_blocked_calls_carry_the_log_ids_that_exist(stub, probe_tool):
+    stub["answers"] = [_block()]
+    blocked_in = asyncio.run(mcp.call_tool("ce_probe_tool", {"q": "a"}))
+    assert blocked_in.meta["complyedge"] == {"input_event_id": "evt-1", "output_event_id": None}
+
+    stub["answers"] = [{"allowed": True, "violations": []}, _block("EU-OUT-1")]
+    blocked_out = asyncio.run(mcp.call_tool("ce_probe_tool", {"q": "b"}))
+    assert blocked_out.meta["complyedge"] == {"input_event_id": "evt-2", "output_event_id": "evt-3"}
+    assert json.loads(_text(blocked_out))["audit_event_id"] == "evt-3"
+
+
+def test_fail_open_reports_no_log_ids(monkeypatch, probe_tool):
+    monkeypatch.setenv("COMPLYEDGE_API_KEY", KEY)
+    monkeypatch.setenv("COMPLYEDGE_API_URL", f"http://127.0.0.1:{_closed_port()}")
+    result = asyncio.run(mcp.call_tool("ce_probe_tool", {"q": "x"}))
+    assert result.meta["complyedge"] == {"input_event_id": None, "output_event_id": None}
+
+
+def test_no_key_leaves_the_result_untouched(stub, monkeypatch, probe_tool):
+    monkeypatch.delenv("COMPLYEDGE_API_KEY")
+    result = asyncio.run(mcp.call_tool("ce_probe_tool", {"q": "z"}))
+    assert not isinstance(result, CallToolResult)
+
+
+def test_session_record_and_report_carry_the_log_ids(stub):
+    created = json.loads(_text(asyncio.run(mcp.call_tool("eif_new_session", {}))))["session_id"]
+    asyncio.run(mcp.call_tool("eif_record", {"session_id": created, "decision": "Ship the cache change", "models_used": [], "tools_invoked": []}))
+    report = json.loads(_text(asyncio.run(mcp.call_tool("eif_compliance_report", {"session_id": created}))))
+
+    # evt-1 is eif_new_session's input: no EIF session existed yet, so it is
+    # only on that call's result. evt-2 its output, evt-3 eif_record's input.
+    expected = [
+        {"tool": "eif_new_session", "direction": "output", "event_id": "evt-2"},
+        {"tool": "eif_record", "direction": "prompt", "event_id": "evt-3"},
+    ]
+    sess = asyncio.run(session_store.get_session(created))
+    assert sess.provenance_chain[-1].complyedge_event_ids == expected
+    assert [e["event_id"] for e in sess.complyedge_event_ids] == ["evt-2", "evt-3", "evt-4", "evt-5", "evt-6"]
+    md = report["report_markdown"]
+    assert "ComplyEdge Log IDs (2)" in md
+    assert "`evt-2` eif_new_session (output)" in md and "`evt-3` eif_record (prompt)" in md
+
+
+def test_log_id_on_a_missing_session_never_fails_the_call(stub):
+    # The Log ID has no session to go on; the call still reaches the tool,
+    # whose own "not found" is the only error.
+    with pytest.raises(ToolError, match="not found or expired"):
+        asyncio.run(mcp.call_tool("eif_get_session", {"session_id": "no-such-session"}))
+    assert len(stub["seen"]) == 1
+
+
+def test_verify_returns_log_ids_in_headers_and_the_checked_body(stub, verify_client):
+    client, _ = verify_client
+    r = client.post("/verify", json={"claim_text": "Revenue grew 40%", "api_key": "k"})
+
+    assert r.headers["complyedge-input-event-id"] == "evt-1"
+    assert r.headers["complyedge-output-event-id"] == "evt-2"
+    assert stub["seen"][1]["text"] == r.text
+    assert "evt-" not in r.text
+
+
+def test_verify_block_returns_the_log_ids_too(stub, verify_client):
+    client, _ = verify_client
+    stub["answers"] = [{"allowed": True, "violations": []}, _block("EU-OUT-2")]
+    r = client.post("/verify", json={"claim_text": "fine text", "api_key": "k"})
+    assert r.headers["complyedge-input-event-id"] == "evt-1"
+    assert r.headers["complyedge-output-event-id"] == "evt-2"
+
+
+def test_verify_without_key_sends_no_log_id_headers(stub, verify_client, monkeypatch):
+    monkeypatch.delenv("COMPLYEDGE_API_KEY")
+    client, _ = verify_client
+    r = client.post("/verify", json={"claim_text": "fine text", "api_key": "k"})
+    assert "complyedge-input-event-id" not in r.headers

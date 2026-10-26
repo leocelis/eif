@@ -1,6 +1,6 @@
 # Privacy Policy
 
-> **Version:** 1.2 · **Effective:** 2026-10-01
+> **Version:** 1.3 · **Effective:** 2026-10-26
 >
 > Short version: **self-hosted EIF collects no data from you, ever.** If you instead
 > use the optional hosted alpha endpoint (`eif.leocelis.com`), your claim text is
@@ -34,9 +34,12 @@ and returns allow or block; a blocked call returns the rule instead of the resul
 `/verify`, a `HALT` verdict). With each check EIF sends a pseudonymous caller ID (a
 truncated SHA-256 hash of your EIF API key, never the key itself), a role
 (`mcp_client` or `sdk_client`), and your EIF or MCP session ID. ComplyEdge keeps a
-SHA-256 hash of the checked text, not the text itself, together with the decision,
-rule IDs, timestamps and those three identifiers, for 180 days, in the United States.
-These records feed EIF's public [enforcement seal](https://trust.complyedge.io/eif),
+keyed fingerprint (HMAC-SHA-256) of the checked text, not the text itself, together
+with the decision, rule IDs and timestamps, and stores the caller and session IDs only
+as keyed pseudonyms, for 184 days, in the United States. Each check returns a Log ID
+(`event_id`); EIF hands both Log IDs back to you with the answer and lists them on
+your EIF session, so you can later confirm with ComplyEdge that the text you kept is
+the text that was checked. EIF still keeps no copy of the text. These records feed EIF's public [enforcement seal](https://trust.complyedge.io/eif),
 which shows only aggregate counts. If ComplyEdge is unreachable, the call runs without
 the check. ComplyEdge is built by the same author as EIF. Legal basis (GDPR Art. 6):
 legitimate interests (Art. 6(1)(f)), keeping the hosted service's inputs and outputs

@@ -44,3 +44,18 @@ async def update_session(session_id: str, **kwargs) -> SessionState:
         updated = session.model_copy(update=kwargs)
         _sessions[session_id] = updated
         return updated
+
+
+async def note_complyedge_event(session_id: str, entry: dict) -> None:
+    """Append one ComplyEdge Log ID to a live session; no-op if there is none.
+
+    A Log ID is metadata about a call, so a missing or expired session never
+    fails the call it belongs to.
+    """
+    async with _locks[session_id]:
+        session = _sessions.get(session_id)
+        if session is None or datetime.utcnow() - session.created_at > SESSION_TTL:
+            return
+        _sessions[session_id] = session.model_copy(
+            update={"complyedge_event_ids": [*session.complyedge_event_ids, entry]}
+        )
