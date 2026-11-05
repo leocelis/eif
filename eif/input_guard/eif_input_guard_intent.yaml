@@ -7,7 +7,7 @@
 #          manipulation patterns in the user's input turn.
 #
 # Research basis:
-#   - Perez & Ribeiro (2022) "Ignore Previous Prompt" arXiv:2211.09527
+#   - Perez & Ribeiro (2022) arXiv:2211.09527
 #     - prompt injection taxonomy: direct override, goal hijacking, framing injection
 #   - Greshake et al. (2023) "Not What You've Signed Up For" arXiv:2302.12173
 #     - indirect prompt injection via context; anchoring unverified premises
@@ -176,6 +176,6 @@ constraints:
 validation_note: "Validation scripts and evidence reports available on request via GitHub Discussions."
 
 research_references:
-  - "Perez & Ribeiro (2022) arXiv:2211.09527 - Ignore Previous Prompt: Attack Techniques"
+  - "Perez & Ribeiro (2022) arXiv:2211.09527 - prompt injection attack techniques"
   - "Greshake et al. (2023) arXiv:2302.12173 - Not What You've Signed Up For: Indirect Prompt Injection"
   - "EIF corpus S10/S11 - sycophancy root cause: user framing pre-anchors agent response"
