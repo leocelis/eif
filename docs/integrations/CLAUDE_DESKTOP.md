@@ -37,7 +37,7 @@ Restart Claude Desktop. The tools appear in the MCP panel immediately.
 ### Option B - local venv (stdio, fully self-hosted)
 
 ```bash
-pip install eif-engine
+pip install 'eif-engine[mcp]'
 ```
 
 ```json
@@ -58,7 +58,7 @@ pip install eif-engine
   "mcpServers": {
     "eif": {
       "command": "uvx",
-      "args": ["--from", "eif-engine", "eif-mcp-server"]
+      "args": ["--from", "eif-engine[mcp]", "eif-mcp-server"]
     }
   }
 }
@@ -89,7 +89,6 @@ so the agent runs the verification loop without being asked:
 # What eif_verify catches that a naive hallucination check misses:
 #   - sycophantic drift: the answer changed under user pressure, not evidence
 #   - self-preference bias: the model trusting its own prior output
-#   - correlation presented as causation
 #   - stochastic fabrication: the same claim returns different numbers when
 #     re-checked (instability_signals in the response flags this)
 #
@@ -143,4 +142,4 @@ so the agent runs the verification loop without being asked:
 | JSON config rejected | Trailing comma or wrong nesting | Validate the file with `python -m json.tool` |
 | Agent never calls `eif_verify` | Rules block not in Project instructions | Add the block from section 2 |
 | Hosted endpoint returns auth errors | Missing or wrong Bearer key | Re-check the `Authorization` header; request a key via GitHub Discussions |
-| `uvx eif-engine` fails | Package name is not the executable name | Use `uvx --from eif-engine eif-mcp-server` |
+| `uvx eif-engine` fails | Package name is not the executable name | Use `uvx --from 'eif-engine[mcp]' eif-mcp-server` |

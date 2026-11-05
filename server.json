@@ -2,25 +2,13 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.leocelis/eif",
   "title": "Epistemic Integrity Framework (EIF)",
-  "description": "Runtime gate for AI agent claims. Catches confident-but-wrong outputs: sycophantic drift, circular self-validation, causal errors. Runs locally.",
-  "version": "4.1.0",
+  "description": "Runtime gate for AI agent claims. Catches sycophantic drift, circular self-validation, causal errors",
+  "version": "4.2.0",
   "websiteUrl": "https://github.com/leocelis/eif",
   "repository": {
     "url": "https://github.com/leocelis/eif",
     "source": "github"
   },
-  "packages": [
-    {
-      "registryType": "pypi",
-      "identifier": "eif-engine",
-      "version": "4.1.0",
-      "runtimeHint": "uvx",
-      "environmentVariables": [],
-      "transport": {
-        "type": "stdio"
-      }
-    }
-  ],
   "remotes": [
     {
       "type": "sse",

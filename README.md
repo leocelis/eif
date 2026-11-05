@@ -23,6 +23,8 @@ The dominant source of that cost is not hallucinated facts, but unchallenged ass
 
 ## What EIF does
 
+EIF goes past a naive hallucination check: it tests each claim against independent evidence before the agent acts, then routes it to ACT, REVISE or HALT.
+
 EIF is a Python library and MCP server that runs an 8-phase scientific-method pipeline on every load-bearing assumption in an agent's response:
 
 ```
@@ -87,7 +89,7 @@ Full evidence: [`validation/CORPUS_REPORT.md`](validation/CORPUS_REPORT.md). Per
 
 ```bash
 pip install -e ".[mcp]"   # local dev (the MCP extra powers the examples below)
-# or: uvx --from eif-engine eif-mcp-server   # zero-install stdio MCP server
+# or: uvx --from 'eif-engine[mcp]' eif-mcp-server   # zero-install stdio MCP server
 ```
 
 ### Two-tool path (recommended for first session)
@@ -206,7 +208,7 @@ VS Code / GitHub Copilot (`.vscode/mcp.json`): use `"servers"` (not `"mcpServers
   "mcpServers": {
     "eif": {
       "command": "uvx",
-      "args": ["--from", "eif-engine", "eif-mcp-server"]
+      "args": ["--from", "eif-engine[mcp]", "eif-mcp-server"]
     }
   }
 }
@@ -304,7 +306,6 @@ it is present and your agent picks up the loop automatically:
 # What eif_verify catches that a naive hallucination check misses:
 #   - sycophantic drift: the answer changed under user pressure, not evidence
 #   - self-preference bias: the model trusting its own prior output
-#   - correlation presented as causation
 #   - stochastic fabrication: the same claim returns different numbers when
 #     re-checked (instability_signals in the response flags this)
 #
@@ -558,7 +559,6 @@ Full corpus: [`validation/`](validation/)
 |------|-------------|
 | [`CORPUS_REPORT.md`](validation/CORPUS_REPORT.md) | Aggregated results across 14 scenarios, 84 agent turns |
 | [`EIF_INVESTMENT_V31_EVIDENCE.md`](validation/EIF_INVESTMENT_V31_EVIDENCE.md) | Sample: Investment decision - Series A, 6 turns |
-| [`aggregate_corpus.py`](validation/aggregate_corpus.py) | Aggregator script - regenerates `CORPUS_REPORT.md` |
 
 Additional per-scenario evidence reports (S6v31–S20) available on request via GitHub Discussions.
 
@@ -605,3 +605,5 @@ Performance and market figures in this README are modeled or third-party estimat
 ## License
 
 MIT - see [LICENSE](LICENSE). Maintained by [Leo Celis](https://github.com/leocelis).
+
+<!-- mcp-name: io.github.leocelis/eif -->

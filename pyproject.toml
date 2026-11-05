@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name            = "eif-engine"
-version         = "4.1.0"
-description     = "Epistemic Integrity Framework - the scientific method applied to AI agent reasoning"
+version         = "4.2.0"
+description     = "EIF (Epistemic Integrity Framework): runtime gate for AI agent claims. Catches sycophantic drift, circular self-validation, causal errors."
 keywords        = ["ai-safety", "agents", "hallucination", "scientific-method", "mcp", "bayesian", "sycophancy", "epistemic-integrity"]
 classifiers     = [
     "Development Status :: 3 - Alpha",

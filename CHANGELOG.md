@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-11-05
+
+### Fixed
+- The published MCP install failed with ImportError: `mcp` is an extra, and the
+  4.1.0 metadata allowed mcp 2.x. Install lines now use `eif-engine[mcp]`, and
+  the extra is pinned to `mcp>=1.19,<2`.
+- Removed the claim that `eif_verify` catches correlation presented as causation.
+  `eif_causal_gate` does that.
+
 - **ComplyEdge checks wait 15 s by default (was 5).** A cold ComplyEdge instance answers in
   about 8 s; with 5 s the check was skipped, so the caller lost the verdict and the Log ID
   of a record ComplyEdge had written. `COMPLYEDGE_TIMEOUT_S` still overrides it.

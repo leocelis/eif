@@ -48,7 +48,6 @@ marker, so older v1.0 installs remain valid until you refresh them.
 # What eif_verify catches that a naive hallucination check misses:
 #   - sycophantic drift: the answer changed under user pressure, not evidence
 #   - self-preference bias: the model trusting its own prior output
-#   - correlation presented as causation
 #   - stochastic fabrication: the same claim returns different numbers when
 #     re-checked (instability_signals in the response flags this)
 #

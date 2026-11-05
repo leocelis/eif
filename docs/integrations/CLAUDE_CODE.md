@@ -44,7 +44,7 @@ claude mcp get eif
 ### Option B - local venv (stdio, fully self-hosted)
 
 ```bash
-pip install eif-engine
+pip install 'eif-engine[mcp]'
 claude mcp add eif -- /path/to/venv/bin/python -m eif.mcp_server.server --scope user
 ```
 
@@ -71,7 +71,7 @@ Or the zero-install local form:
   "mcpServers": {
     "eif": {
       "command": "uvx",
-      "args": ["--from", "eif-engine", "eif-mcp-server"]
+      "args": ["--from", "eif-engine[mcp]", "eif-mcp-server"]
     }
   }
 }
@@ -104,7 +104,6 @@ project's `CLAUDE.md` instead.
 # What eif_verify catches that a naive hallucination check misses:
 #   - sycophantic drift: the answer changed under user pressure, not evidence
 #   - self-preference bias: the model trusting its own prior output
-#   - correlation presented as causation
 #   - stochastic fabrication: the same claim returns different numbers when
 #     re-checked (instability_signals in the response flags this)
 #
@@ -201,4 +200,4 @@ eif_check_rules_installed(file_paths=["/Users/you/.claude/CLAUDE.md"])
 | Agent never calls `eif_verify` | Rules block not installed | Append the block from section 2 to `~/.claude/CLAUDE.md` |
 | `eif_check_rules_installed` returns `installed: false` for a file you know exists | Hosted server cannot read your filesystem, or relative paths resolved against the server CWD | Use a local (stdio) server for this check, pass absolute paths, or validate with `grep` |
 | Hosted endpoint returns auth errors | Missing or wrong Bearer key | Re-check the `Authorization` header; request a key via GitHub Discussions |
-| `uvx eif-engine` fails | Package name is not the executable name | Use `uvx --from eif-engine eif-mcp-server` |
+| `uvx eif-engine` fails | Package name is not the executable name | Use `uvx --from 'eif-engine[mcp]' eif-mcp-server` |

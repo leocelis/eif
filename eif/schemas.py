@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field, field_validator
 # Constants
 # ─────────────────────────────────────────────
 
-ENGINE_VERSION = "4.1.0"
+ENGINE_VERSION = "4.2.0"
 
 # Decision thresholds
 THRESHOLD_ACT: float = 0.70
