@@ -20,6 +20,7 @@ Environment variables:
     EIF_HOST                  = bind host (default: 127.0.0.1; set 0.0.0.0 to expose)
     EIF_PORT                  = bind port (default: 8080)
     EIF_API_KEY               = optional shared secret; if set, required as Bearer token
+    EIF_TENANT_KEY_SECRET     = optional; enables host-derived tenant keys (see auth.py)
     EIF_RATE_LIMIT_PER_MINUTE = per-key request cap on a fixed 60s window (default: 60)
 """
 
@@ -40,7 +41,7 @@ try:
 except ImportError as exc:
     raise ImportError("pip install 'eif-engine[mcp]' to use the HTTP server") from exc
 
-from eif.mcp_server.auth import AuthError, require_api_key  # noqa: E402
+from eif.mcp_server.auth import SCOPE_KEY, AuthError, require_api_key  # noqa: E402
 from eif.mcp_server.server import mcp  # noqa: E402  # type: ignore[attr-defined]
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -107,7 +108,7 @@ class EIFMiddleware:
             if _ENV == "development" and not ws_key:
                 ws_key = "dev-test-key"
             try:
-                require_api_key(ws_key)
+                scope[SCOPE_KEY] = require_api_key(ws_key)
             except AuthError:
                 await send({"type": "websocket.close", "code": 4401})
                 return
@@ -148,7 +149,9 @@ class EIFMiddleware:
                 api_key = "dev-test-key"
 
             try:
-                require_api_key(api_key)
+                # Kept on the scope: each MCP message reads its own request's
+                # caller from here (tenant, session binding).
+                scope[SCOPE_KEY] = require_api_key(api_key)
             except AuthError as e:
                 await self._send_json(send, {"error": str(e), "code": "UNAUTHORIZED"}, 401)
                 return
@@ -225,6 +228,15 @@ class EIFMiddleware:
             )
             return
 
+        # Same tenant and owner as the MCP path: the session belongs to the
+        # caller's tenant, and every session read inside eif_verify checks it.
+        from eif import session as session_store  # noqa: PLC0415
+
+        with session_store.caller_scope(key_info.get("tenant")):
+            await self._verify_pipeline(send, data, claim_text, key_info)
+
+    async def _verify_pipeline(self, send, data: dict, claim_text: str, key_info: dict) -> None:
+        """Run extraction + eif_verify for POST /verify and send the flat answer."""
         from eif.mcp_server import compliance  # noqa: PLC0415
 
         # Run the EIF pipeline
@@ -385,6 +397,19 @@ def _patch_server_session_auto_init() -> None:
         _orig = ServerSession._received_request
 
         async def _auto_init(self, responder):  # type: ignore[override]
+            # Bind the MCP session to the identity of the request that opened
+            # it (the first message, normally initialize). Later messages from
+            # another identity are refused by the tenant gate (server.py).
+            try:
+                from eif.mcp_server.auth import identity_of, key_info_for_request
+                from eif.mcp_server.server import bind_session_identity
+
+                meta = responder.message_metadata
+                request = getattr(meta, "request_context", None)
+                if request is not None:
+                    bind_session_identity(self, identity_of(key_info_for_request(request)))
+            except Exception as exc:  # noqa: BLE001
+                _log.debug("session identity bind skipped: %s", exc)
             if (
                 self._initialization_state == InitializationState.NotInitialized
                 and not isinstance(responder.request.root, _InitReq)

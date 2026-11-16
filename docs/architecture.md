@@ -209,6 +209,8 @@ eif/
 - Docker image built from this repository.
 - Optional hosted alpha: the maintainer runs the same HTTP/SSE server at `eif.leocelis.com` (Bearer key required, private alpha). See the README's MCP server section.
 
+**Tenant keys.** For a host app serving many tenants through one HTTP server, `EIF_TENANT_KEY_SECRET` turns on keys derived per tenant (`auth.py`). Each MCP message is resolved to its own request's tenant, the MCP session is bound to the key that opened it, a session belongs to the tenant that created it (another tenant gets "not found or expired", by tool or by resource), and a tenant key sees only `eif_new_session`, `eif_extract_claims_from_decision` and `eif_verify`. `EIF_API_KEY` is unchanged. See `docs/integrations/HOST_APP.md`.
+
 ---
 
 ## Design principles

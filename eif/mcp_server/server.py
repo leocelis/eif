@@ -201,6 +201,85 @@ from eif.mcp_server.compliance import ComplianceFastMCP  # noqa: E402
 
 mcp = ComplianceFastMCP("eif-engine", **_fastmcp_kwargs)
 
+# ── Tenant gate (host-derived tenant keys) ────────────────────────────────────
+#
+# Every MCP request handler is wrapped so that, for each message:
+#   1. the caller is read from THAT message's own HTTP request (never from the
+#      request that opened the MCP session: with stateful streamable HTTP the
+#      server task starts inside the first request, so a variable set there
+#      would stay the first caller's);
+#   2. the MCP session is bound to the identity that opened it, and a message
+#      whose key resolves to another identity (another tenant, or the operator
+#      key) is refused;
+#   3. the caller's tenant is set on eif.session for the call, so every
+#      session read and write checks the owner;
+#   4. a tenant may call only TENANT_TOOLS, and tools/list shows only those.
+# Stdio and direct calls carry no request: no tenant, no binding, as before.
+
+TENANT_TOOLS = frozenset({"eif_new_session", "eif_extract_claims_from_decision", "eif_verify"})
+_IDENTITY_ATTR = "_eif_identity"
+
+
+def bind_session_identity(server_session, identity: str | None) -> bool:
+    """Bind an MCP session to the first identity seen; False on a mismatch."""
+    if server_session is None or identity is None:
+        return True
+    bound = getattr(server_session, _IDENTITY_ATTR, None)
+    if bound is None:
+        try:
+            setattr(server_session, _IDENTITY_ATTR, identity)
+        except Exception:  # noqa: BLE001
+            pass
+        return True
+    return bound == identity
+
+
+def _install_tenant_gate(app: FastMCP) -> None:
+    from mcp import types as _t
+    from mcp.server.lowlevel.server import request_ctx
+    from mcp.shared.exceptions import McpError
+
+    from eif.mcp_server.auth import identity_of, key_info_for_request
+
+    def _refuse(message: str) -> McpError:
+        return McpError(_t.ErrorData(code=_t.INVALID_REQUEST, message=message))
+
+    def _wrap(req_type, handler):
+        async def gated(req):
+            try:
+                rctx = request_ctx.get()
+            except LookupError:
+                rctx = None
+            request = getattr(rctx, "request", None) if rctx is not None else None
+            info = key_info_for_request(request)
+            if request is not None and not bind_session_identity(
+                getattr(rctx, "session", None), identity_of(info)
+            ):
+                _log.warning("AUTH  MCP session continued with a different key - refused")
+                raise _refuse(
+                    "This MCP session was opened with a different key. "
+                    "Open a new MCP session with this key."
+                )
+            tenant = (info or {}).get("tenant")
+            if tenant and req_type is _t.CallToolRequest and req.params.name not in TENANT_TOOLS:
+                raise _refuse(f"Tool {req.params.name!r} is not available to tenant keys.")
+            with session_store.caller_scope(tenant):
+                result = await handler(req)
+            if tenant and req_type is _t.ListToolsRequest:
+                listed = result.root
+                tools = [tool for tool in listed.tools if tool.name in TENANT_TOOLS]
+                result = _t.ServerResult(listed.model_copy(update={"tools": tools}))
+            return result
+
+        return gated
+
+    handlers = app._mcp_server.request_handlers
+    for req_type, handler in list(handlers.items()):
+        handlers[req_type] = _wrap(req_type, handler)
+
+
+_install_tenant_gate(mcp)
+
 # ── EIF context reference card ────────────────────────────────────────────────
 
 _EIF_PHASES = [

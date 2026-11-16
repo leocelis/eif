@@ -1,6 +1,6 @@
 # EIF: Host-Derived Tenant Keys and Session Owners: Tech Spec
 
-**Status:** PROPOSED (2026-11-15). Not built.
+**Status:** BUILT (2026-11-16). Proposed 2026-11-15.
 **Scope:** the self-hosted HTTP server (`eif/mcp_server/`) and the session store (`eif/session.py`).
 Stdio and local use do not change.
 
