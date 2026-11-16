@@ -67,6 +67,11 @@ services:
       - key: COMPLYEDGE_API_KEY
         type: SECRET
         scope: RUN_TIME
+      # Optional: derived per-tenant keys for a host app (docs/integrations/HOST_APP.md).
+      # Unset = only EIF_API_KEY authenticates.
+      - key: EIF_TENANT_KEY_SECRET
+        type: SECRET
+        scope: RUN_TIME
 
 # Custom domain: add in the DO dashboard (Settings -> Domains), e.g.
 # eif.<your-domain>, then CNAME it to the app's default hostname.
