@@ -3,7 +3,7 @@
   "name": "io.github.leocelis/eif",
   "title": "Epistemic Integrity Framework (EIF)",
   "description": "Runtime gate for AI agent claims. Catches sycophantic drift, circular self-validation, causal errors",
-  "version": "4.2.0",
+  "version": "4.3.0",
   "websiteUrl": "https://github.com/leocelis/eif",
   "repository": {
     "url": "https://github.com/leocelis/eif",

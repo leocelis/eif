@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-11-20
+
 ### Changed
 - `eif_verify` returns REVISE, not PASS, when nothing contradicts but a checked
   claim stays below posterior 0.70 (no evidence leaves it at 0.5). PASS now
