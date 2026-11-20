@@ -543,8 +543,8 @@ from eif import session
 from eif.integration import EIFInterceptor, EIFHaltError
 
 sid = asyncio.run(session.new_session()).session_id
-interceptor = EIFInterceptor(session_id=sid)
-chain = my_chain.with_config(callbacks=[interceptor])
+interceptor = EIFInterceptor(session_id=sid, intercept_chains=True)  # True for LCEL chains; agents use on_agent_finish
+chain = my_chain.with_config(callbacks=[interceptor.get_langchain_handler()])
 ```
 
 ---

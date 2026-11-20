@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   needs `ddgs`; `pip install eif` is a different project; the rules block no
   longer mentions a REVISE verdict `eif_verify` never returns (block v1.4).
 - serverInfo reports EIF's version, not the mcp library's.
+- `eif.integration.EIFInterceptor` failed on langchain 1.x
+  (`No module named 'langchain.callbacks'`); it now imports from
+  `langchain_core` and needs only `langchain-core`. The README example passes
+  `get_langchain_handler()` and sets `intercept_chains=True` for chains.
 
 ## [4.2.0] - 2026-11-05
 

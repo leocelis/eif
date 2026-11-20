@@ -43,16 +43,19 @@ _log = logging.getLogger(__name__)
 
 def _require_langchain() -> None:
     try:
-        import langchain  # noqa: F401
+        import langchain_core  # noqa: F401
     except ImportError as exc:
         raise ImportError(
             "LangChain is required to use EIFInterceptor. "
-            "Install it with: pip install langchain"
+            "Install it with: pip install langchain-core"
         ) from exc
 
 
 class EIFInterceptor:
-    """LangChain BaseCallbackHandler that runs EIF verification on agent output.
+    """Runs EIF verification on LangChain agent or chain output.
+
+    Pass ``get_langchain_handler()`` (a LangChain BaseCallbackHandler) in
+    ``callbacks``; the EIFInterceptor object itself is not a handler.
 
     Intercepts two events:
       - on_agent_finish: fires when an AgentExecutor produces a final answer.
@@ -85,7 +88,8 @@ class EIFInterceptor:
         intercept_chains: bool = False,
     ) -> None:
         _require_langchain()
-        from langchain.callbacks.base import BaseCallbackHandler  # noqa: F401 - verify import
+        # langchain_core: langchain 1.x removed langchain.callbacks.
+        from langchain_core.callbacks.base import BaseCallbackHandler  # noqa: F401 - verify import
 
         self.session_id = session_id
         self.claims = claims
@@ -96,7 +100,7 @@ class EIFInterceptor:
         self.last_result: dict | None = None
 
     def _build_base(self) -> Any:
-        from langchain.callbacks.base import BaseCallbackHandler
+        from langchain_core.callbacks.base import BaseCallbackHandler
 
         interceptor = self
 
