@@ -1,5 +1,7 @@
 # Host apps: one EIF server for many tenants
 
+> Needs a release after 4.2.0. Tenant keys are on `main`, not yet on PyPI.
+
 A **host app** is an application that serves many of its own customers
 (tenants) and wants to give each of them claim verification through one
 self-hosted EIF HTTP server (`eif-mcp-http-server`).

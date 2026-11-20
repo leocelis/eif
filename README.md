@@ -29,7 +29,7 @@ EIF is a Python library and MCP server that runs an 8-phase scientific-method pi
 
 ```
 DECLARE          → name every assumption: KNOWN / ASSUMED / GUESSED
-FALSIFY          → collect independent evidence via P1 code, P2 tools, P3 web search
+FALSIFY          → collect independent evidence via P1 code, P2 tools, P3 web search (needs `ddgs`)
 CAUSAL_GATE      → check Pearl causal level; flag confounders and disjunctive bias
 CALIBRATE        → Bayesian posterior update (prior × likelihood → route)
 CHALLENGE        → adversarial critic produces counter-evidence and competing hypothesis
@@ -88,11 +88,14 @@ Full evidence: [`validation/CORPUS_REPORT.md`](validation/CORPUS_REPORT.md). Per
 ## Quick start
 
 ```bash
-pip install -e ".[mcp]"   # local dev (the MCP extra powers the examples below)
+pip install 'eif-engine[mcp]'   # the MCP extra powers the examples below
+# from a source checkout: pip install -e ".[mcp]"
 # or: uvx --from 'eif-engine[mcp]' eif-mcp-server   # zero-install stdio MCP server
 ```
 
-### Two-tool path (recommended for first session)
+The PyPI package named `eif` is an unrelated project (Extended Isolation Forest) that also imports as `eif`; install `eif-engine`, and not both in one environment.
+
+### Three-call path (recommended for first session)
 
 ```python
 import asyncio
@@ -124,6 +127,8 @@ async def run():
 
 asyncio.run(run())
 ```
+
+On a plain install, with no host data, EIF has no evidence source: each claim comes back INSUFFICIENT and the verdict is PASS. Pass the data your agent already fetched as `host_tool_outputs` (next section) to get a real check.
 
 ### Register a P0 host tool (highest-accuracy evidence tier)
 
@@ -292,7 +297,7 @@ Paste the block below into an agent instruction file (`.cursorrules`, `CLAUDE.md
 it is present and your agent picks up the loop automatically:
 
 ```
-# <BEGIN-EIF v1.3>
+# <BEGIN-EIF v1.4>
 # ==============================================================================
 # EIF - Epistemic Integrity Framework
 # ==============================================================================
@@ -321,8 +326,7 @@ it is present and your agent picks up the loop automatically:
 #   3. Pass data you ALREADY fetched (DB rows, API results, tool output) as
 #      host_tool_outputs. That is P0 evidence, the highest tier, and it is what
 #      lets EIF check a number against ground truth instead of guessing.
-#   4. Verdict HALT: do not act; surface halt_cards to the user. REVISE:
-#      gather more evidence before acting. PASS: proceed.
+#   4. Verdict HALT: do not act; surface halt_cards to the user. PASS: proceed.
 #   5. Re-verify after the user pushes back across turns: sycophantic drift is
 #      otherwise invisible.
 #
@@ -331,7 +335,7 @@ it is present and your agent picks up the loop automatically:
 #
 # Do NOT run eif_verify on every reply. Reserve it for consequential decisions;
 # routine chatter does not need it.
-# <END-EIF v1.3>
+# <END-EIF v1.4>
 ```
 
 The canonical text of this block lives in
@@ -349,7 +353,7 @@ EIF's `FALSIFY` phase collects evidence from independent sources, prioritised:
 | **P0** HOST_TOOL | Host agent has a registered tool for this data source | Calls the authoritative data API directly (e.g. IGDB, EHR, internal DB) |
 | **P1** CODE_EXECUTION | Numerical/metric claims | Executes Python against public benchmark data |
 | **P2** TOOL_OUTPUT | Agent tool calls available | Parses coordinator web search / API results |
-| **P3** WEB_SEARCH | Regulatory / temporal claims | Live web search via DDGS native or OpenAI responses API |
+| **P3** WEB_SEARCH | Regulatory / temporal claims | Live web search via DDGS, only when the `ddgs` package is installed (no extra installs it) |
 | **P4** PARAMETRIC | All else (capped) | LLM parametric probe - fallback only |
 
 P0 is the highest-priority tier and is the mechanism used in the Manor Lords / IGDB demo. P4 is never used for company-specific claims. In the validation corpus, P4 rate was **0.0%** across all 14 scenarios.
@@ -492,7 +496,7 @@ except EIFHaltError as e:
     # Do not act on this response - EIF found a claim without independent evidence.
 ```
 
-Install: `pip install "eif-engine[sdk]"` (or `pip install -e ".[sdk]"` from a source checkout)
+Install: `pip install "eif-engine[sdk,server]"` (the server needs `[server]`; or `pip install -e ".[sdk,server]"` from a source checkout)
 
 Note: on any EIF server error the SDK fails open (the response passes through unverified) so your agent never blocks on EIF availability. Treat `EIFHaltError` as the only enforcement signal.
 
@@ -501,7 +505,8 @@ Note: on any EIF server error the SDK fails open (the response passes through un
 ```python
 import eif.auto  # add once at your agent's entry point
 
-# All subsequent OpenAI and Anthropic calls are intercepted automatically.
+# Subsequent calls on the sync OpenAI client, and on the Anthropic client (best effort),
+# are intercepted. Async clients are not.
 # EIFHaltError is raised if a HALT verdict is reached.
 ```
 
@@ -533,8 +538,12 @@ except EIFHaltError as e:
 For in-process LangChain integration (no HTTP server required), use the original integration layer:
 
 ```python
+import asyncio
+from eif import session
 from eif.integration import EIFInterceptor, EIFHaltError
-interceptor = EIFInterceptor(session_id="my-session")
+
+sid = asyncio.run(session.new_session()).session_id
+interceptor = EIFInterceptor(session_id=sid)
 chain = my_chain.with_config(callbacks=[interceptor])
 ```
 
@@ -542,7 +551,7 @@ chain = my_chain.with_config(callbacks=[interceptor])
 
 ## Design principles
 
-1. **No LLM calls in the engine** - all computation is deterministic local math; LLM calls happen only in evidence collection (P3/P4) and claim extraction (integration layer)
+1. **No LLM calls in the engine** - all computation is deterministic local math; LLM calls happen only in eif_challenge (multi-critic) and the causal evidence probe, and only when OPENAI_API_KEY is set
 2. **Pydantic v2 throughout** - every input and output is a typed, validated model
 3. **H₀ = claim-is-TRUE** - Popper orientation: REJECT means the claim fails
 4. **EIG stopping rule** - stop gathering evidence when KL(posterior ∥ prior) < 0.01 nats

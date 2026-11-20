@@ -150,8 +150,7 @@ def require_api_key(api_key: str) -> dict:
     info = validate_key(api_key)
     if info is None:
         raise AuthError(
-            "Invalid or missing API key. "
-            "Set EIF_API_KEY on the server and pass it as a Bearer token."
+            "Invalid or missing API key. Send it as Authorization: Bearer <key>."
         )
     _log.debug("AUTH  accepted key_id=%s", info["key_id"])
     return info

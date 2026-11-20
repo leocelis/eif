@@ -125,8 +125,7 @@ WHAT eif_verify CATCHES THAT NAIVE CHECKS MISS:
   1. Sycophantic drift - model changed answer under social pressure, not evidence.
   2. Self-preference bias - model prefers its own generated claims 67-82% of the
      time (arXiv:2509.00462). P4 self-validation is blocked for self-generated claims.
-  3. Causal errors - model presents a correlation as causation.
-  4. Instability (stochastic fabrication) - calling the same claim twice returns
+  3. Instability (stochastic fabrication) - calling the same claim twice returns
      different numbers. instability_signals in the response flags this. If you see
      it, the model is not drawing from a stable factual source.
 
@@ -200,6 +199,11 @@ if _ts is not None:
 from eif.mcp_server.compliance import ComplianceFastMCP  # noqa: E402
 
 mcp = ComplianceFastMCP("eif-engine", **_fastmcp_kwargs)
+# FastMCP 1.x takes no version argument and reports the mcp library's version in
+# serverInfo; report EIF's own version instead.
+from eif import __version__ as _eif_version  # noqa: E402
+
+mcp._mcp_server.version = _eif_version
 
 # ── Tenant gate (host-derived tenant keys) ────────────────────────────────────
 #
@@ -2512,9 +2516,9 @@ To generate the full compliance report: call eif_compliance_report(session_id="{
         "eif_extract_claims_from_decision, which sets these fields correctly), "
         "conversation_turns[] (optional prior turns for sycophancy/self-preference detection), "
         "model_name (optional str - model that produced the claims; default 'unknown'), "
-        "host_tool_outputs[] (optional list of P0 host-tool result dicts - each with claim_text, "
-        "verdict (SUPPORTS/CONTRADICTS/INSUFFICIENT), posterior, evidence_source, and optionally "
-        "raw_result; when present, treated as highest-priority P0 tier evidence).\n\n"
+        "host_tool_outputs[] (optional list of P0 host-tool results, each as {tool_name, query, "
+        "result, data_scope}: the raw data your agent already fetched; EIF checks the claim "
+        "against result; when present, treated as highest-priority P0 tier evidence).\n\n"
         "Architecture note: eif_verify is an integrated façade. It runs an evidence-first pipeline "
         "internally (DECLARE → evidence probes → sycophancy gate → instability check) and does NOT "
         "call the granular tools (eif_causal_gate, eif_calibrate, eif_challenge, eif_update, eif_explain, "
@@ -2533,9 +2537,7 @@ To generate the full compliance report: call eif_compliance_report(session_id="{
         "fabricated cases because self-generated content carries the model's stylistic fingerprint. "
         "This tool detects claims with high overlap with prior assistant turns, flags them as "
         "self_preference_risk, and blocks parametric self-validation for those claims - "
-        "ensuring the model that generated a claim cannot also verify it.\n"
-        "3. Causal errors - model presents a correlation as a cause, or inverts the direction "
-        "of causation. Catches the same pattern as the corpus REVERSED verdict (CARET/ATBC clinical trial).\n\n"
+        "ensuring the model that generated a claim cannot also verify it.\n\n"
         "Returns PASS or HALT. HALT includes: the specific failure type, the contradicting evidence "
         "with source citation, and a cost impact estimate sourced from domain benchmarks "
         "(HHS OCR enforcement data, SEC enforcement actions, Gartner 2024, HIPAA Tier 3 penalties).\n\n"
@@ -3033,7 +3035,7 @@ async def eif_verify(
         "instant results. Use this in a first session to see a real HALT before testing "
         "your own decisions.\n\n"
         "The demo uses a real gaming-agent scenario: an AI agent recommended a 10-article "
-        "series based on fabricated IGDB metrics (claimed 5,000+ hype followers; actual: 47). "
+        "series based on fabricated IGDB metrics (claimed 3,500+ hype followers; actual: 36). "
         "EIF HALT-routes both claims with evidence and cost impact.\n\n"
         "Returns: a complete eif_verify-shaped response. Top-level keys: "
         "is_demo (true), demo_note (scenario description), verdict (HALT), "

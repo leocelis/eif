@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Host-derived tenant keys: one self-hosted HTTP server can serve many tenants,
+  each with its own sessions and a three-tool allowlist. See
+  `docs/integrations/HOST_APP.md`.
+
+### Fixed
+- The `eif_verify` tool description gave a `host_tool_outputs` shape the code
+  ignores; it now gives `{tool_name, query, result, data_scope}`.
+- Removed the claim that `eif_verify` catches correlation presented as causation
+  from the server instructions and the `eif_verify` description (4.2.0 removed
+  it from the README only).
+- Docs: a plain install has no evidence source and answers PASS; web search
+  needs `ddgs`; `pip install eif` is a different project; the rules block no
+  longer mentions a REVISE verdict `eif_verify` never returns (block v1.4).
+- serverInfo reports EIF's version, not the mcp library's.
+
 ## [4.2.0] - 2026-11-05
 
 ### Fixed

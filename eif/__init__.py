@@ -8,7 +8,7 @@ or HALT.
 Public surfaces:
     eif.session             - async session store
     eif.schemas             - Pydantic v2 models (dependency root)
-    eif.mcp_server.server   - MCP server exposing the 24 pipeline tools
+    eif.mcp_server.server   - MCP server exposing the 25 tools
     eif.sdk                 - EIFInterceptor / EIFCallbackHandler / EIFHaltError
     eif.auto                - zero-config import hook (import eif.auto)
     eif.integration         - in-process interceptor (no HTTP server needed)

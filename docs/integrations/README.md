@@ -34,7 +34,7 @@ README to match. `eif_check_rules_installed` detects any `<BEGIN-EIF vX.Y>`
 marker, so older v1.0 installs remain valid until you refresh them.
 
 ```
-# <BEGIN-EIF v1.3>
+# <BEGIN-EIF v1.4>
 # ==============================================================================
 # EIF - Epistemic Integrity Framework
 # ==============================================================================
@@ -63,8 +63,7 @@ marker, so older v1.0 installs remain valid until you refresh them.
 #   3. Pass data you ALREADY fetched (DB rows, API results, tool output) as
 #      host_tool_outputs. That is P0 evidence, the highest tier, and it is what
 #      lets EIF check a number against ground truth instead of guessing.
-#   4. Verdict HALT: do not act; surface halt_cards to the user. REVISE:
-#      gather more evidence before acting. PASS: proceed.
+#   4. Verdict HALT: do not act; surface halt_cards to the user. PASS: proceed.
 #   5. Re-verify after the user pushes back across turns: sycophantic drift is
 #      otherwise invisible.
 #
@@ -73,7 +72,7 @@ marker, so older v1.0 installs remain valid until you refresh them.
 #
 # Do NOT run eif_verify on every reply. Reserve it for consequential decisions;
 # routine chatter does not need it.
-# <END-EIF v1.3>
+# <END-EIF v1.4>
 ```
 
 ## Verifying an install
