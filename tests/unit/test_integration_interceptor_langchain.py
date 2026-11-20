@@ -30,4 +30,4 @@ def test_handler_is_a_langchain_core_callback_and_runs_on_chain_end():
     chain.with_config(callbacks=[handler]).invoke("go")
 
     assert interceptor.last_result is not None
-    assert interceptor.last_result["verdict"] in {"PASS", "HALT"}
+    assert interceptor.last_result["verdict"] in {"PASS", "REVISE", "HALT"}

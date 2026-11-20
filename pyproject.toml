@@ -50,6 +50,9 @@ full  = [
     "openai>=1.0",
     "langchain-core>=0.2",
 ]
+search = [
+    "ddgs>=9",
+]
 pdf   = [
     "fpdf2>=2.7",
 ]

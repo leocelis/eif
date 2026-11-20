@@ -62,7 +62,7 @@ def native_search(query: str, max_results: int = 5) -> str:
         from ddgs import DDGS  # noqa: PLC0415
     except ImportError as exc:
         raise ImportError(
-            "EIF native search requires ddgs. Install it with: pip install ddgs\n"
+            "EIF native search requires ddgs. Install it with: pip install \"eif-engine[search]\" (or pip install ddgs)\n"
             "Source: github.com/deedy5/ddgs (MIT, no API key required)"
         ) from exc
 

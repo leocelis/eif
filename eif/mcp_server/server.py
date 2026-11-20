@@ -104,8 +104,10 @@ FIRST-USE FLOW (three-tool path, in order):
      Returns 2-4 structured claims ranked by HALT probability. Skip this
      step only if the user has already written structured claims.
   3. eif_verify(session_id=...) - pass the session_id from step 1 and the
-     claims from step 2. Returns PASS or HALT with evidence and a dollar
-     cost figure.
+     claims from step 2. Returns PASS, REVISE or HALT with evidence and,
+     on HALT, a dollar cost figure. REVISE means a claim was not supported
+     well enough to act on (no evidence, or posterior below 0.70): pass the
+     data you already fetched as host_tool_outputs, or gather more.
 
 WHEN TO CALL eif_extract_claims_from_decision:
   - Any time the user describes an agent output or decision in natural language.
@@ -2538,7 +2540,9 @@ To generate the full compliance report: call eif_compliance_report(session_id="{
         "This tool detects claims with high overlap with prior assistant turns, flags them as "
         "self_preference_risk, and blocks parametric self-validation for those claims - "
         "ensuring the model that generated a claim cannot also verify it.\n\n"
-        "Returns PASS or HALT. HALT includes: the specific failure type, the contradicting evidence "
+        "Returns PASS, REVISE or HALT. PASS: every checked claim reached posterior 0.70. "
+        "REVISE: nothing contradicts, but a claim has no evidence or weak evidence (posterior "
+        "below 0.70); supply host_tool_outputs or gather more before acting. HALT includes: the specific failure type, the contradicting evidence "
         "with source citation, and a cost impact estimate sourced from domain benchmarks "
         "(HHS OCR enforcement data, SEC enforcement actions, Gartner 2024, HIPAA Tier 3 penalties).\n\n"
         "Verification logic runs on your server. Evidence collection may make outbound calls: "
@@ -2546,7 +2550,7 @@ To generate the full compliance report: call eif_compliance_report(session_id="{
         "No third-party EIF scoring service receives your data. For P3/P4, evidence queries are "
         "derived from claim text - claim-derived probe prompts may reach OpenAI when OPENAI_API_KEY "
         "is set. Raw agent responses and full claim payloads are not forwarded. Call once per claim set.\n\n"
-        "Returns: verdict (PASS/HALT), halted_claims[], halt_cards[] (formatted markdown cards "
+        "Returns: verdict (PASS/REVISE/HALT), halted_claims[], halt_cards[] (formatted markdown cards "
         "suitable for display), evidence_trails[] (each entry: claim, verdict, posterior, "
         "probe_tier, evidence_summary, evidence_source, retrieved_at, self_preference_risk, "
         "self_preference_overlap; optional keys: metric_quality (F17 - present when evidence was "
@@ -2572,7 +2576,7 @@ async def eif_verify(
     model_name: str = "unknown",
     host_tool_outputs: list[dict] | None = None,
 ) -> dict:
-    """Facade: run the full EIF pipeline and return PASS/HALT with evidence trail.
+    """Facade: run the full EIF pipeline and return PASS/REVISE/HALT with evidence trail.
 
     claims: list of {"text": str, "claim_type": "KNOWN"|"ASSUMED"|"GUESSED",
                      "falsification_condition": str (optional)}
@@ -2931,7 +2935,11 @@ async def eif_verify(
     # Advisory entries (HIGH_RISK_ASSUMED review flags) are surfaced in
     # halted_claims but do not block: only true HALT entries drive the verdict.
     halt = any(not e.get("advisory") for e in halted_claims)
-    verdict = "HALT" if halt else "PASS"
+    # Same thresholds as eif_calibrate: a checked claim below THRESHOLD_ACT is not
+    # ready to act on. No evidence leaves the prior (0.5), so it routes to REVISE,
+    # never to PASS.
+    unsupported = [t["claim"] for t in evidence_trails if t["posterior"] < THRESHOLD_ACT]
+    verdict = "HALT" if halt else ("REVISE" if unsupported else "PASS")
     _trace(
         "Verdict",
         f"{verdict} - {len(halted_claims)} claim(s) halted · "
@@ -3023,7 +3031,14 @@ async def eif_verify(
             + (" Call eif_compliance_report to generate the full EU AI Act compliance report."
                if new_count >= _COMPLIANCE_EMAIL_HALT_THRESHOLD else "")
             if halt else
-            "All claims pass. Call eif_record to store the provenance trail for audit."
+            (
+                f"{len(unsupported)} claim(s) lack enough evidence to act on (posterior below "
+                f"{THRESHOLD_ACT}): " + "; ".join(c[:80] for c in unsupported[:3])
+                + ". Pass the data you already fetched as host_tool_outputs, or gather more, "
+                "then call eif_verify again."
+                if unsupported else
+                "All claims pass. Call eif_record to store the provenance trail for audit."
+            )
         ),
     }
 

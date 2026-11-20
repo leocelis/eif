@@ -15,18 +15,28 @@ Edit `claude_desktop_config.json`:
 
 ### Option A - hosted endpoint (zero install, private alpha)
 
-Request a key by [opening a Discussion](https://github.com/leocelis/eif/discussions), then add:
+Request a key by [opening a Discussion](https://github.com/leocelis/eif/discussions). Claude Desktop does not connect
+to a remote server written into `claude_desktop_config.json` as a `url`, and
+its custom connector screen has no field for an API key header. Use the
+`mcp-remote` bridge (needs Node.js), which runs locally and adds the header:
 
 ```json
 {
   "mcpServers": {
     "eif": {
-      "url": "https://eif.leocelis.com/sse",
-      "headers": { "Authorization": "Bearer YOUR_KEY_HERE" }
+      "command": "npx",
+      "args": [
+        "-y", "mcp-remote", "https://eif.leocelis.com/sse",
+        "--header", "Authorization:${EIF_AUTH}"
+      ],
+      "env": { "EIF_AUTH": "Bearer YOUR_KEY_HERE" }
     }
   }
 }
 ```
+
+The header has no space after the colon on purpose: Claude Desktop on Windows
+splits arguments on spaces, so the space lives in `EIF_AUTH` instead.
 
 Restart Claude Desktop. The tools appear in the MCP panel immediately.
 
@@ -75,7 +85,7 @@ Project's custom instructions (or paste it at the start of a conversation)
 so the agent runs the verification loop without being asked:
 
 ```
-# <BEGIN-EIF v1.4>
+# <BEGIN-EIF v1.5>
 # ==============================================================================
 # EIF - Epistemic Integrity Framework
 # ==============================================================================
@@ -104,7 +114,10 @@ so the agent runs the verification loop without being asked:
 #   3. Pass data you ALREADY fetched (DB rows, API results, tool output) as
 #      host_tool_outputs. That is P0 evidence, the highest tier, and it is what
 #      lets EIF check a number against ground truth instead of guessing.
-#   4. Verdict HALT: do not act; surface halt_cards to the user. PASS: proceed.
+#   4. Verdict HALT: do not act; surface halt_cards to the user. REVISE: a
+#      claim had no evidence or weak evidence (below 0.70); pass the data you
+#      already fetched as host_tool_outputs, or gather more, then verify again.
+#      PASS: every checked claim reached 0.70; proceed.
 #   5. Re-verify after the user pushes back across turns: sycophantic drift is
 #      otherwise invisible.
 #
@@ -113,7 +126,7 @@ so the agent runs the verification loop without being asked:
 #
 # Do NOT run eif_verify on every reply. Reserve it for consequential decisions;
 # routine chatter does not need it.
-# <END-EIF v1.4>
+# <END-EIF v1.5>
 ```
 
 ---

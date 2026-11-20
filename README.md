@@ -29,7 +29,7 @@ EIF is a Python library and MCP server that runs an 8-phase scientific-method pi
 
 ```
 DECLARE          → name every assumption: KNOWN / ASSUMED / GUESSED
-FALSIFY          → collect independent evidence via P1 code, P2 tools, P3 web search (needs `ddgs`)
+FALSIFY          → collect independent evidence via P1 code, P2 tools, P3 web search (opt-in `[search]` extra)
 CAUSAL_GATE      → check Pearl causal level; flag confounders and disjunctive bias
 CALIBRATE        → Bayesian posterior update (prior × likelihood → route)
 CHALLENGE        → adversarial critic produces counter-evidence and competing hypothesis
@@ -50,7 +50,7 @@ PROGRAMME        → Lakatos health monitor: PROGRESSIVE / STABLE / DEGENERATIVE
 
 At the end of each turn, EIF routes the agent's output:
 - **ACT** - posterior ≥ threshold, evidence supports, safe to proceed
-- **REVISE** - some assumptions unresolved, moderate confidence
+- **REVISE** - no contradiction, but a claim has no evidence or weak evidence (posterior below 0.70)
 - **HALT** - evidence contradicts a HIGH-consequence claim; do not proceed
 
 ---
@@ -78,6 +78,8 @@ EIF was validated against **14 multi-agent conversation scenarios** across 5 dom
 | S17 Disjunctive Bias - clinical supplements | clinical | 6 | 0 | 4 | 2 |
 | S19a Model Scaling Ablation (gpt-4o-mini) | investment | 6 | 0 | 5 | 1 |
 | **TOTAL** | | **84** | **35** | **25** | **15** |
+
+The three verdict columns add to 75, not 84: the 6 turns of S14 (the cold-start baseline for EXPLAIN) and 3 of the 9 turns of S11 carry no routing verdict.
 
 **P4 (circular LLM self-validation) rate: 0.0% across all 14 scenarios.** Every piece of evidence came from an independent source - executable code, coordinator tool outputs, or live web search.
 
@@ -128,7 +130,7 @@ async def run():
 asyncio.run(run())
 ```
 
-On a plain install, with no host data, EIF has no evidence source: each claim comes back INSUFFICIENT and the verdict is PASS. Pass the data your agent already fetched as `host_tool_outputs` (next section) to get a real check.
+On a plain install, with no host data, EIF has no evidence source: each claim comes back INSUFFICIENT and the verdict is REVISE. Pass the data your agent already fetched as `host_tool_outputs` (next section) to get a real check.
 
 ### Register a P0 host tool (highest-accuracy evidence tier)
 
@@ -176,7 +178,7 @@ The short version:
 
 Request a key by [opening a Discussion](https://github.com/leocelis/eif/discussions), then add the config for your client.
 
-Cursor (`~/.cursor/mcp.json`) and Claude Desktop (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+Cursor (`~/.cursor/mcp.json`):
 
 ```json
 {
@@ -188,6 +190,8 @@ Cursor (`~/.cursor/mcp.json`) and Claude Desktop (`~/Library/Application Support
   }
 }
 ```
+
+Claude Desktop does not read a remote `url` from its config file; use the `mcp-remote` bridge in [`docs/integrations/CLAUDE_DESKTOP.md`](docs/integrations/CLAUDE_DESKTOP.md).
 
 VS Code / GitHub Copilot (`.vscode/mcp.json`): use `"servers"` (not `"mcpServers"`) and add `"type": "http"` to the entry.
 
@@ -297,7 +301,7 @@ Paste the block below into an agent instruction file (`.cursorrules`, `CLAUDE.md
 it is present and your agent picks up the loop automatically:
 
 ```
-# <BEGIN-EIF v1.4>
+# <BEGIN-EIF v1.5>
 # ==============================================================================
 # EIF - Epistemic Integrity Framework
 # ==============================================================================
@@ -326,7 +330,10 @@ it is present and your agent picks up the loop automatically:
 #   3. Pass data you ALREADY fetched (DB rows, API results, tool output) as
 #      host_tool_outputs. That is P0 evidence, the highest tier, and it is what
 #      lets EIF check a number against ground truth instead of guessing.
-#   4. Verdict HALT: do not act; surface halt_cards to the user. PASS: proceed.
+#   4. Verdict HALT: do not act; surface halt_cards to the user. REVISE: a
+#      claim had no evidence or weak evidence (below 0.70); pass the data you
+#      already fetched as host_tool_outputs, or gather more, then verify again.
+#      PASS: every checked claim reached 0.70; proceed.
 #   5. Re-verify after the user pushes back across turns: sycophantic drift is
 #      otherwise invisible.
 #
@@ -335,7 +342,7 @@ it is present and your agent picks up the loop automatically:
 #
 # Do NOT run eif_verify on every reply. Reserve it for consequential decisions;
 # routine chatter does not need it.
-# <END-EIF v1.4>
+# <END-EIF v1.5>
 ```
 
 The canonical text of this block lives in
@@ -353,7 +360,7 @@ EIF's `FALSIFY` phase collects evidence from independent sources, prioritised:
 | **P0** HOST_TOOL | Host agent has a registered tool for this data source | Calls the authoritative data API directly (e.g. IGDB, EHR, internal DB) |
 | **P1** CODE_EXECUTION | Numerical/metric claims | Executes Python against public benchmark data |
 | **P2** TOOL_OUTPUT | Agent tool calls available | Parses coordinator web search / API results |
-| **P3** WEB_SEARCH | Regulatory / temporal claims | Live web search via DDGS, only when the `ddgs` package is installed (no extra installs it) |
+| **P3** WEB_SEARCH | Regulatory / temporal claims | Live web search via DDGS, only when the `ddgs` package is installed (opt-in: `pip install "eif-engine[mcp,search]"`; claim-derived search terms leave your machine) |
 | **P4** PARAMETRIC | All else (capped) | LLM parametric probe - fallback only |
 
 P0 is the highest-priority tier and is the mechanism used in the Manor Lords / IGDB demo. P4 is never used for company-specific claims. In the validation corpus, P4 rate was **0.0%** across all 14 scenarios.

@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `eif_verify` returns REVISE, not PASS, when nothing contradicts but a checked
+  claim stays below posterior 0.70 (no evidence leaves it at 0.5). PASS now
+  means every checked claim reached 0.70. Same thresholds as `eif_calibrate`.
+  Callers that only check for HALT keep working. Rules block v1.5.
+
 ### Added
+- `[search]` extra installs `ddgs` for P3 web search. Kept opt-in because it
+  sends claim-derived search terms off the machine.
 - Host-derived tenant keys: one self-hosted HTTP server can serve many tenants,
   each with its own sessions and a three-tool allowlist. See
   `docs/integrations/HOST_APP.md`.
@@ -18,9 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed the claim that `eif_verify` catches correlation presented as causation
   from the server instructions and the `eif_verify` description (4.2.0 removed
   it from the README only).
-- Docs: a plain install has no evidence source and answers PASS; web search
-  needs `ddgs`; `pip install eif` is a different project; the rules block no
-  longer mentions a REVISE verdict `eif_verify` never returns (block v1.4).
+- Docs: a plain install has no evidence source; web search needs `ddgs`;
+  `pip install eif` is a different project.
+- Docs: Claude Desktop does not connect a remote `url` from its config file;
+  the hosted option now uses the `mcp-remote` bridge with the key in `env`.
+- README corpus table: noted that the verdict columns add to 75 of 84 turns.
 - serverInfo reports EIF's version, not the mcp library's.
 - `eif.integration.EIFInterceptor` failed on langchain 1.x
   (`No module named 'langchain.callbacks'`); it now imports from

@@ -6,7 +6,7 @@ EIF ships a FastMCP server exposing 25 tools. The six you will touch most:
 |---|---|
 | `eif_new_session` | Create a session; every other stateful tool requires its session_id |
 | `eif_extract_claims_from_decision` | Turn a plain-text decision into structured claims ranked by HALT probability |
-| `eif_verify` | One-call full pipeline: declare, falsify, calibrate, route. Returns PASS or HALT |
+| `eif_verify` | One-call full pipeline: declare, falsify, calibrate, route. Returns PASS, REVISE or HALT |
 | `eif_get_context` | Load EIF thresholds and the pipeline quick reference (granular pipeline only) |
 | `eif_demo` | Zero-setup HALT example, no API calls |
 | `eif_check_rules_installed` | Confirm the rules block below is installed |
@@ -90,7 +90,7 @@ without being asked. For a single project, put the same block in the
 project's `CLAUDE.md` instead.
 
 ```
-# <BEGIN-EIF v1.4>
+# <BEGIN-EIF v1.5>
 # ==============================================================================
 # EIF - Epistemic Integrity Framework
 # ==============================================================================
@@ -119,7 +119,10 @@ project's `CLAUDE.md` instead.
 #   3. Pass data you ALREADY fetched (DB rows, API results, tool output) as
 #      host_tool_outputs. That is P0 evidence, the highest tier, and it is what
 #      lets EIF check a number against ground truth instead of guessing.
-#   4. Verdict HALT: do not act; surface halt_cards to the user. PASS: proceed.
+#   4. Verdict HALT: do not act; surface halt_cards to the user. REVISE: a
+#      claim had no evidence or weak evidence (below 0.70); pass the data you
+#      already fetched as host_tool_outputs, or gather more, then verify again.
+#      PASS: every checked claim reached 0.70; proceed.
 #   5. Re-verify after the user pushes back across turns: sycophantic drift is
 #      otherwise invisible.
 #
@@ -128,7 +131,7 @@ project's `CLAUDE.md` instead.
 #
 # Do NOT run eif_verify on every reply. Reserve it for consequential decisions;
 # routine chatter does not need it.
-# <END-EIF v1.4>
+# <END-EIF v1.5>
 ```
 
 ---

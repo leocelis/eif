@@ -563,7 +563,7 @@ class TestFacadeTools:
         )
         assert isinstance(result, dict)
         assert "verdict" in result
-        assert result["verdict"] in ("PASS", "HALT")
+        assert result["verdict"] in ("PASS", "REVISE", "HALT")
         for key in (
             "halted_claims",
             "halt_cards",

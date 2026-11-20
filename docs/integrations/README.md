@@ -20,7 +20,7 @@ Every client ultimately uses the same three-tool path:
 2. `eif_extract_claims_from_decision(decision)` turns a plain-text agent
    decision into 2-4 structured claims ranked by HALT probability.
 3. `eif_verify(session_id, decision, claims)` runs the full pipeline and
-   returns PASS or HALT with evidence and a cost figure.
+   returns PASS, REVISE or HALT with evidence and a cost figure.
 
 The granular pipeline (`eif_declare` through `eif_record`) is available in all
 clients for step-by-step control. See the [main README](../../README.md) for
@@ -34,7 +34,7 @@ README to match. `eif_check_rules_installed` detects any `<BEGIN-EIF vX.Y>`
 marker, so older v1.0 installs remain valid until you refresh them.
 
 ```
-# <BEGIN-EIF v1.4>
+# <BEGIN-EIF v1.5>
 # ==============================================================================
 # EIF - Epistemic Integrity Framework
 # ==============================================================================
@@ -63,7 +63,10 @@ marker, so older v1.0 installs remain valid until you refresh them.
 #   3. Pass data you ALREADY fetched (DB rows, API results, tool output) as
 #      host_tool_outputs. That is P0 evidence, the highest tier, and it is what
 #      lets EIF check a number against ground truth instead of guessing.
-#   4. Verdict HALT: do not act; surface halt_cards to the user. PASS: proceed.
+#   4. Verdict HALT: do not act; surface halt_cards to the user. REVISE: a
+#      claim had no evidence or weak evidence (below 0.70); pass the data you
+#      already fetched as host_tool_outputs, or gather more, then verify again.
+#      PASS: every checked claim reached 0.70; proceed.
 #   5. Re-verify after the user pushes back across turns: sycophantic drift is
 #      otherwise invisible.
 #
@@ -72,7 +75,7 @@ marker, so older v1.0 installs remain valid until you refresh them.
 #
 # Do NOT run eif_verify on every reply. Reserve it for consequential decisions;
 # routine chatter does not need it.
-# <END-EIF v1.4>
+# <END-EIF v1.5>
 ```
 
 ## Verifying an install

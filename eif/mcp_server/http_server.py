@@ -307,7 +307,10 @@ class EIFMiddleware:
 
         flat_response: dict = {
             "verdict": verdict,
-            "routing": first_halt.get("reason", "ACT") if verdict == "HALT" else "ACT",
+            "routing": (
+                first_halt.get("reason", "ACT") if verdict == "HALT"
+                else "REVISE" if verdict == "REVISE" else "ACT"
+            ),
             "evidence_summary": (
                 matching_trail.get("evidence_summary")
                 or first_halt.get("evidence_summary", "")
